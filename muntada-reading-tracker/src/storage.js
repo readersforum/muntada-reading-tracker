@@ -8,35 +8,54 @@ function cloudStorage() {
   return window.Telegram?.WebApp?.CloudStorage || null;
 }
 
+// تنبيه مؤقت للتشخيص — نشيله بعد ما نعرف السبب
+function debugAlert(message) {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.showAlert) {
+    tg.showAlert(message);
+  } else {
+    alert(message);
+  }
+}
+
 export const storage = {
   async get(key) {
     const cs = cloudStorage();
-    if (cs) {
-      return new Promise((resolve) => {
-        cs.getItem(key, (err, value) => {
-          resolve(err || !value ? null : value);
-        });
-      });
+    if (!cs) {
+      debugAlert("لا يوجد CloudStorage — استخدام localStorage بدلاً منه");
+      return localStorage.getItem(key);
     }
-    return localStorage.getItem(key);
+    return new Promise((resolve) => {
+      cs.getItem(key, (err, value) => {
+        if (err) {
+          debugAlert("خطأ بالقراءة: " + JSON.stringify(err));
+          resolve(null);
+          return;
+        }
+        resolve(!value ? null : value);
+      });
+    });
   },
 
   async set(key, value) {
     const cs = cloudStorage();
-    if (cs) {
-      return new Promise((resolve) => {
-        cs.setItem(key, value, (err) => resolve(!err));
-      });
+    if (!cs) {
+      debugAlert("لا يوجد CloudStorage — الحفظ بـ localStorage بدلاً منه");
+      localStorage.setItem(key, value);
+      return true;
     }
-    localStorage.setItem(key, value);
-    return true;
+    return new Promise((resolve) => {
+      cs.setItem(key, value, (err, success) => {
+        if (err) {
+          debugAlert("خطأ بالحفظ: " + JSON.stringify(err));
+          resolve(false);
+          return;
+        }
+        if (!success) {
+          debugAlert("الحفظ رجع false بدون خطأ واضح");
+        }
+        resolve(!!success);
+      });
+    });
   },
 };
-
-// NOTE on the shared leaderboard feature:
-// CloudStorage only stores data privately per-user — there is no built-in
-// way for one user's app instance to read another user's CloudStorage.
-// To show a real cross-member leaderboard you'll need a small backend
-// (e.g. a Cloudflare Worker + KV, or a Supabase table) that each client
-// writes to and reads from. The opt-in toggle in the app currently just
-// saves the user's local preference as a placeholder for that future step.
