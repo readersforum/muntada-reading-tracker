@@ -80,18 +80,3 @@ export const storage = {
     return withTimeout(op, "حفظ");
   },
 };
-
-// تشخيص لمرة وحدة عند التحميل — يوريك نسخة تلكرام ووجود CloudStorage
-if (typeof window !== "undefined") {
-  window.addEventListener("load", () => {
-    setTimeout(() => {
-      const tg = window.Telegram?.WebApp;
-      const info = [
-        "platform: " + (tg?.platform ?? "غير معروف"),
-        "version: " + (tg?.version ?? "غير معروف"),
-        "CloudStorage موجود: " + (tg?.CloudStorage ? "نعم" : "لا"),
-      ].join("\n");
-      debugAlert(info);
-    }, 1000);
-  });
-}
