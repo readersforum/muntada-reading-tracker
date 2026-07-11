@@ -63,7 +63,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const raw = await storage.get(`reading:${userId}`);
+      const raw = await storage.get(`reading_${userId}`);
       if (raw) {
         const data = JSON.parse(raw);
         setName(data.name || "");
@@ -122,18 +122,18 @@ export default function App() {
     setNote("");
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
-    await storage.set(`reading:${userId}`, JSON.stringify({ name, entries: next, optIn }));
+    await storage.set(`reading_${userId}`, JSON.stringify({ name, entries: next, optIn }));
   }
 
   async function toggleOptIn() {
     const next = !optIn;
     setOptIn(next);
-    await storage.set(`reading:${userId}`, JSON.stringify({ name, entries, optIn: next }));
+    await storage.set(`reading_${userId}`, JSON.stringify({ name, entries, optIn: next }));
   }
 
   async function saveName(v) {
     setName(v);
-    await storage.set(`reading:${userId}`, JSON.stringify({ name: v, entries, optIn }));
+    await storage.set(`reading_${userId}`, JSON.stringify({ name: v, entries, optIn }));
   }
 
   const navy = "#1B3A5C";
@@ -248,7 +248,7 @@ export default function App() {
               <div className="card" style={{ borderRadius: 12, padding: 18, textAlign: "center" }}>
                 <Check size={22} style={{ color: orange, marginBottom: 6 }} />
                 <div style={{ color: navy, fontSize: 14, fontWeight: 600 }}>سجّلت قراءتك اليوم بالفعل</div>
-                <div style={{ color: "#8B8272", fontSize: 12, marginTop: 4 }}>عد غداً لتستمر بالسلسلة</div>
+                <div style={{ color: "#8B8272", fontSize: 12, marginTop: 4 }}>عد غداً لتستمر بالسلسلة🔥</div>
               </div>
             ) : (
               <form onSubmit={submitToday} className="card" style={{ borderRadius: 12, padding: 16 }}>
