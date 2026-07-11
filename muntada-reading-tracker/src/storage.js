@@ -8,7 +8,6 @@ function cloudStorage() {
   return window.Telegram?.WebApp?.CloudStorage || null;
 }
 
-// تنبيه مؤقت للتشخيص — نشيله بعد ما نعرف السبب
 function debugAlert(message) {
   const tg = window.Telegram?.WebApp;
   if (tg?.showAlert) {
@@ -18,6 +17,26 @@ function debugAlert(message) {
   }
 }
 
+function withTimeout(promise, label, ms = 4000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        debugAlert(`انتهى الوقت (timeout) على عملية: ${label} — الـ CloudStorage ما استجاب.`);
+        resolve(null);
+      }
+    }, ms);
+    promise.then((result) => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(result);
+      }
+    });
+  });
+}
+
 export const storage = {
   async get(key) {
     const cs = cloudStorage();
@@ -25,7 +44,7 @@ export const storage = {
       debugAlert("لا يوجد CloudStorage — استخدام localStorage بدلاً منه");
       return localStorage.getItem(key);
     }
-    return new Promise((resolve) => {
+    const op = new Promise((resolve) => {
       cs.getItem(key, (err, value) => {
         if (err) {
           debugAlert("خطأ بالقراءة: " + JSON.stringify(err));
@@ -35,6 +54,7 @@ export const storage = {
         resolve(!value ? null : value);
       });
     });
+    return withTimeout(op, "قراءة");
   },
 
   async set(key, value) {
@@ -44,7 +64,7 @@ export const storage = {
       localStorage.setItem(key, value);
       return true;
     }
-    return new Promise((resolve) => {
+    const op = new Promise((resolve) => {
       cs.setItem(key, value, (err, success) => {
         if (err) {
           debugAlert("خطأ بالحفظ: " + JSON.stringify(err));
@@ -57,5 +77,21 @@ export const storage = {
         resolve(!!success);
       });
     });
+    return withTimeout(op, "حفظ");
   },
 };
+
+// تشخيص لمرة وحدة عند التحميل — يوريك نسخة تلكرام ووجود CloudStorage
+if (typeof window !== "undefined") {
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      const tg = window.Telegram?.WebApp;
+      const info = [
+        "platform: " + (tg?.platform ?? "غير معروف"),
+        "version: " + (tg?.version ?? "غير معروف"),
+        "CloudStorage موجود: " + (tg?.CloudStorage ? "نعم" : "لا"),
+      ].join("\n");
+      debugAlert(info);
+    }, 1000);
+  });
+}
