@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X } from "lucide-react";
-import { storage } from "./storage.js";
+import { loadUserData, saveProfile, saveTodayEntry } from "./storage.js";
 import logo from "./assets/logo.png";
 
 function todayKey(d = new Date()) {
@@ -62,19 +62,15 @@ export default function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    (async () => {
-      const raw = await storage.get(`reading_${userId}`);
-      if (raw) {
-        const data = JSON.parse(raw);
-        setName(data.name || "");
-        setEntries(data.entries || []);
-        setOptIn(!!data.optIn);
-      } else {
-        setName(getTelegramName());
-      }
-      setLoaded(true);
-    })();
-  }, [userId]);
+  (async () => {
+    const telegramName = getTelegramName();
+    const data = await loadUserData(userId, telegramName);
+    setName(data.name);
+    setEntries(data.entries);
+    setOptIn(data.optIn);
+    setLoaded(true);
+  })();
+}, [userId]);
 
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   const hasLoggedToday = entries.some((e) => e.date === todayKey());
@@ -122,19 +118,19 @@ export default function App() {
     setNote("");
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
-    await storage.set(`reading_${userId}`, JSON.stringify({ name, entries: next, optIn }));
+    await saveTodayEntry(userId, entry);
   }
 
   async function toggleOptIn() {
-    const next = !optIn;
-    setOptIn(next);
-    await storage.set(`reading_${userId}`, JSON.stringify({ name, entries, optIn: next }));
-  }
+  const next = !optIn;
+  setOptIn(next);
+  await saveProfile(userId, { name, optIn: next });
+}
 
-  async function saveName(v) {
-    setName(v);
-    await storage.set(`reading_${userId}`, JSON.stringify({ name: v, entries, optIn }));
-  }
+async function saveName(v) {
+  setName(v);
+  await saveProfile(userId, { name: v, optIn });
+}
 
   const navy = "#1B3A5C";
   const navyDark = "#132A44";
