@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X } from "lucide-react";
-import { loadUserData, saveProfile, saveTodayEntry } from "./storage.js";
+import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, computeXP } from "./storage.js";
 import logo from "./assets/logo.png";
 
 function todayKey(d = new Date()) {
@@ -60,6 +60,8 @@ export default function App() {
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+const [booksFinished, setBooksFinished] = useState(0);
+const [finishedMsg, setFinishedMsg] = useState("");
 
   useEffect(() => {
   (async () => {
@@ -68,11 +70,16 @@ export default function App() {
     setName(data.name);
     setEntries(data.entries);
     setOptIn(data.optIn);
+    setBooksFinished(data.booksFinished);
     setLoaded(true);
   })();
 }, [userId]);
 
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
+  const xpInfo = useMemo(
+  () => computeXP(entries, booksFinished, streaks.longest),
+  [entries, booksFinished, streaks.longest]
+);
   const hasLoggedToday = entries.some((e) => e.date === todayKey());
 
   const thisMonthPages = useMemo(() => {
@@ -102,6 +109,19 @@ export default function App() {
       setError("اكتب اسم الكتاب قبل التسجيل");
       return;
     }
+    async function handleFinishBook() {
+  if (!book.trim()) {
+    setFinishedMsg("اكتب اسم الكتاب أول");
+    setTimeout(() => setFinishedMsg(""), 2000);
+    return;
+  }
+  const ok = await finishBook(userId, book.trim());
+  if (ok) {
+    setBooksFinished((prev) => prev + 1);
+    setFinishedMsg(`🎉 تهانينا على إنهاء "${book.trim()}"! +50 XP`);
+    setTimeout(() => setFinishedMsg(""), 3000);
+  }
+}
     const entry = {
       id: `${todayKey()}-${Date.now()}`,
       date: todayKey(),
@@ -296,8 +316,24 @@ async function saveName(v) {
                   <Feather size={14} style={{ verticalAlign: "-2px", marginLeft: 6 }} />
                   سجّل قراءة اليوم
                 </button>
+                <button
+  type="button"
+  onClick={handleFinishBook}
+  style={{
+    width: "100%", padding: "9px 0", borderRadius: 8, border: `1px solid ${orange}`,
+    background: "transparent", color: orange, fontWeight: 600, fontSize: 13, cursor: "pointer",
+    marginTop: 8,
+  }}
+>
+  ✅ أنهيت هذا الكتاب (+50 XP)
+</button>
               </form>
             )}
+            {finishedMsg && (
+  <div style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 10, fontWeight: 700 }}>
+    {finishedMsg}
+  </div>
+)}
             {saved && (
               <div style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 10, fontWeight: 600 }}>
                 تم التسجيل ✦ استمر بالسلسلة
@@ -354,7 +390,31 @@ async function saveName(v) {
         )}
 
         {tab === "stats" && (
-          <div className="fade-in card" style={{ borderRadius: 12, padding: 18 }}>
+          <>
+            <div style={{ marginBottom: 16, textAlign: "center" }}>
+              <div style={{ color: navy, fontWeight: 700, fontSize: 16 }}>
+                المستوى {xpInfo.level} — {xpInfo.levelName}
+              </div>
+              <div style={{ color: "#8B8272", fontSize: 12, margin: "4px 0 8px" }}>
+                {xpInfo.totalXP} XP
+              </div>
+              <div style={{ background: "#EEE6D6", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${xpInfo.progress * 100}%`,
+                    background: orange,
+                    height: "100%",
+                    transition: "width .3s",
+                  }}
+                />
+              </div>
+              <div style={{ color: "#A99B7E", fontSize: 11, marginTop: 4 }}>
+                {xpInfo.nextThreshold - xpInfo.totalXP > 0
+                  ? `${xpInfo.nextThreshold - xpInfo.totalXP} XP للمستوى التالي`
+                  : "أعلى مستوى حاليًا 🏆"}
+              </div>
+            </div>
+            <div className="fade-in card" style={{ borderRadius: 12, padding: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
               <span style={{ color: "#8B8272", fontSize: 13 }}>صفحات هذا الشهر</span>
               <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{thisMonthPages}</span>
