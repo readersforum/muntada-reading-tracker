@@ -60,26 +60,26 @@ export default function App() {
   const [note, setNote] = useState("");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-const [booksFinished, setBooksFinished] = useState(0);
-const [finishedMsg, setFinishedMsg] = useState("");
+  const [booksFinished, setBooksFinished] = useState(0);
+  const [finishedMsg, setFinishedMsg] = useState("");
 
   useEffect(() => {
-  (async () => {
-    const telegramName = getTelegramName();
-    const data = await loadUserData(userId, telegramName);
-    setName(data.name);
-    setEntries(data.entries);
-    setOptIn(data.optIn);
-    setBooksFinished(data.booksFinished);
-    setLoaded(true);
-  })();
-}, [userId]);
+    (async () => {
+      const telegramName = getTelegramName();
+      const data = await loadUserData(userId, telegramName);
+      setName(data.name);
+      setEntries(data.entries);
+      setOptIn(data.optIn);
+      setBooksFinished(data.booksFinished);
+      setLoaded(true);
+    })();
+  }, [userId]);
 
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   const xpInfo = useMemo(
-  () => computeXP(entries, booksFinished, streaks.longest),
-  [entries, booksFinished, streaks.longest]
-);
+    () => computeXP(entries, booksFinished, streaks.longest),
+    [entries, booksFinished, streaks.longest]
+  );
   const hasLoggedToday = entries.some((e) => e.date === todayKey());
 
   const thisMonthPages = useMemo(() => {
@@ -109,19 +109,6 @@ const [finishedMsg, setFinishedMsg] = useState("");
       setError("اكتب اسم الكتاب قبل التسجيل");
       return;
     }
-    async function handleFinishBook() {
-  if (!book.trim()) {
-    setFinishedMsg("اكتب اسم الكتاب أول");
-    setTimeout(() => setFinishedMsg(""), 2000);
-    return;
-  }
-  const ok = await finishBook(userId, book.trim());
-  if (ok) {
-    setBooksFinished((prev) => prev + 1);
-    setFinishedMsg(`🎉 تهانينا على إنهاء "${book.trim()}"! +50 XP`);
-    setTimeout(() => setFinishedMsg(""), 3000);
-  }
-}
     const entry = {
       id: `${todayKey()}-${Date.now()}`,
       date: todayKey(),
@@ -141,16 +128,30 @@ const [finishedMsg, setFinishedMsg] = useState("");
     await saveTodayEntry(userId, entry);
   }
 
-  async function toggleOptIn() {
-  const next = !optIn;
-  setOptIn(next);
-  await saveProfile(userId, { name, optIn: next });
-}
+  async function handleFinishBook() {
+    if (!book.trim()) {
+      setFinishedMsg("اكتب اسم الكتاب أول");
+      setTimeout(() => setFinishedMsg(""), 2000);
+      return;
+    }
+    const ok = await finishBook(userId, book.trim());
+    if (ok) {
+      setBooksFinished((prev) => prev + 1);
+      setFinishedMsg(`🎉 تهانينا على إنهاء "${book.trim()}"! +50 XP`);
+      setTimeout(() => setFinishedMsg(""), 3000);
+    }
+  }
 
-async function saveName(v) {
-  setName(v);
-  await saveProfile(userId, { name: v, optIn });
-}
+  async function toggleOptIn() {
+    const next = !optIn;
+    setOptIn(next);
+    await saveProfile(userId, { name, optIn: next });
+  }
+
+  async function saveName(v) {
+    setName(v);
+    await saveProfile(userId, { name: v, optIn });
+  }
 
   const navy = "#1B3A5C";
   const navyDark = "#132A44";
@@ -317,23 +318,23 @@ async function saveName(v) {
                   سجّل قراءة اليوم
                 </button>
                 <button
-  type="button"
-  onClick={handleFinishBook}
-  style={{
-    width: "100%", padding: "9px 0", borderRadius: 8, border: `1px solid ${orange}`,
-    background: "transparent", color: orange, fontWeight: 600, fontSize: 13, cursor: "pointer",
-    marginTop: 8,
-  }}
->
-  ✅ أنهيت هذا الكتاب (+50 XP)
-</button>
+                  type="button"
+                  onClick={handleFinishBook}
+                  style={{
+                    width: "100%", padding: "9px 0", borderRadius: 8, border: `1px solid ${orange}`,
+                    background: "transparent", color: orange, fontWeight: 600, fontSize: 13, cursor: "pointer",
+                    marginTop: 8,
+                  }}
+                >
+                  ✅ أنهيت هذا الكتاب (+50 XP)
+                </button>
               </form>
             )}
             {finishedMsg && (
-  <div style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 10, fontWeight: 700 }}>
-    {finishedMsg}
-  </div>
-)}
+              <div style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 10, fontWeight: 700 }}>
+                {finishedMsg}
+              </div>
+            )}
             {saved && (
               <div style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 10, fontWeight: 600 }}>
                 تم التسجيل ✦ استمر بالسلسلة
@@ -415,23 +416,28 @@ async function saveName(v) {
               </div>
             </div>
             <div className="fade-in card" style={{ borderRadius: 12, padding: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-              <span style={{ color: "#8B8272", fontSize: 13 }}>صفحات هذا الشهر</span>
-              <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{thisMonthPages}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                <span style={{ color: "#8B8272", fontSize: 13 }}>صفحات هذا الشهر</span>
+                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{thisMonthPages}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                <span style={{ color: "#8B8272", fontSize: 13 }}>مجموع أيام التسجيل</span>
+                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{new Set(entries.map((e) => e.date)).size}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                <span style={{ color: "#8B8272", fontSize: 13 }}>كتب مختلفة سُجّلت</span>
+                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{bookCount}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                <span style={{ color: "#8B8272", fontSize: 13 }}>كتب أُنهيت بالكامل</span>
+                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{booksFinished}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
+                <span style={{ color: "#8B8272", fontSize: 13 }}>أطول سلسلة قراءة</span>
+                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{streaks.longest} يوم</span>
+              </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-              <span style={{ color: "#8B8272", fontSize: 13 }}>مجموع أيام التسجيل</span>
-              <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{new Set(entries.map((e) => e.date)).size}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-              <span style={{ color: "#8B8272", fontSize: 13 }}>كتب مختلفة سُجّلت</span>
-              <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{bookCount}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
-              <span style={{ color: "#8B8272", fontSize: 13 }}>أطول سلسلة قراءة</span>
-              <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{streaks.longest} يوم</span>
-            </div>
-          </div>
+          </>
         )}
       </div>
     </div>
