@@ -62,6 +62,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [booksFinished, setBooksFinished] = useState(0);
   const [finishedMsg, setFinishedMsg] = useState("");
+  const [leaderboard, setLeaderboard] = useState([]);
+const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -74,7 +76,16 @@ export default function App() {
       setLoaded(true);
     })();
   }, [userId]);
-
+useEffect(() => {
+  if (tab === "leaderboard") {
+    setLoadingLeaderboard(true);
+    getLeaderboard().then((data) => {
+      setLeaderboard(data);
+      setLoadingLeaderboard(false);
+    });
+  }
+}, [tab]);
+  
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   const xpInfo = useMemo(
     () => computeXP(entries, booksFinished, streaks.longest),
@@ -239,10 +250,11 @@ export default function App() {
 
         <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#FFFFFF", padding: 4, borderRadius: 10, border: "1px solid #E7DFCF" }}>
           {[
-            ["today", "اليوم"],
-            ["log", "السجل"],
-            ["stats", "الإحصائيات"],
-          ].map(([k, label]) => (
+  ["today", "اليوم"],
+  ["log", "السجل"],
+  ["stats", "الإحصائيات"],
+  ["leaderboard", "المتصدرين"],
+].map(([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -439,6 +451,39 @@ export default function App() {
             </div>
           </>
         )}
+        {tab === "leaderboard" && (
+  <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    {loadingLeaderboard ? (
+      <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
+        ...جارِ التحميل
+      </div>
+    ) : leaderboard.length === 0 ? (
+      <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
+        لا يوجد قرّاء مشاركين بلوحة المتصدرين حاليًا
+      </div>
+    ) : (
+      leaderboard.map((r, i) => (
+        <div
+          key={i}
+          className="card"
+          style={{
+            borderRadius: 12, padding: "12px 16px", display: "flex",
+            alignItems: "center", justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ color: orange, fontWeight: 700, fontSize: 15, minWidth: 20 }}>{i + 1}</div>
+            <div style={{ color: navy, fontWeight: 600, fontSize: 14 }}>{r.name}</div>
+          </div>
+          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8B8272" }}>
+            <span>🔥 {r.current} يوم</span>
+            <span>📅 {r.days} يوم قراءة</span>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+)}
       </div>
     </div>
   );
