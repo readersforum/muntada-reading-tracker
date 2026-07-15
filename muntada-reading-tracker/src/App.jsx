@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import html2canvas from "html2canvas";
+import { useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X } from "lucide-react";
 import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, computeXP } from "./storage.js";
 import logo from "./assets/logo.png";
@@ -53,6 +55,7 @@ export default function App() {
   const [optIn, setOptIn] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("today");
+const statsCardRef = useRef(null);
 
   const [book, setBook] = useState("");
   const [pages, setPages] = useState("");
@@ -152,7 +155,33 @@ useEffect(() => {
       setTimeout(() => setFinishedMsg(""), 3000);
     }
   }
-
+async function shareStats() {
+  if (!statsCardRef.current) return;
+  const canvas = await html2canvas(statsCardRef.current, {
+    backgroundColor: "#FAF6EF",
+    scale: 2,
+  });
+  canvas.toBlob(async (blob) => {
+    const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: "إحصائياتي بنادي قراءات المنتدى",
+        });
+      } catch (e) {
+        // المستخدم ألغى المشاركة
+      }
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "my-reading-stats.png";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, "image/png");
+}
   async function toggleOptIn() {
     const next = !optIn;
     setOptIn(next);
@@ -404,6 +433,7 @@ useEffect(() => {
 
         {tab === "stats" && (
           <>
+          <div ref={statsCardRef} style={{ background: cream, padding: 4 }}></div>
             <div style={{ marginBottom: 16, textAlign: "center" }}>
               <div style={{ color: navy, fontWeight: 700, fontSize: 16 }}>
                 المستوى {xpInfo.level} — {xpInfo.levelName}
@@ -448,9 +478,20 @@ useEffect(() => {
                 <span style={{ color: "#8B8272", fontSize: 13 }}>أطول سلسلة قراءة</span>
                 <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{streaks.longest} يوم</span>
               </div>
-            </div>
-          </>
-        )}
+                </div>
+              <button
+      onClick={shareStats}
+      style={{
+        width: "100%", marginTop: 12, padding: "10px 0", borderRadius: 8,
+        background: navy, color: "#FFFFFF", fontWeight: 600, fontSize: 13,
+        border: "none", cursor: "pointer",
+      }}
+    >
+      📤 مشاركة إحصائياتي
+    </button>
+  </>
+)}
+
         {tab === "leaderboard" && (
   <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
     {loadingLeaderboard ? (
