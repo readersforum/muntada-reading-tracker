@@ -1,8 +1,7 @@
-import html2canvas from "html2canvas";
-import { useRef } from "react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X } from "lucide-react";
 import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, computeXP } from "./storage.js";
+import html2canvas from "html2canvas";
 import logo from "./assets/logo.png";
 
 function todayKey(d = new Date()) {
@@ -55,7 +54,7 @@ export default function App() {
   const [optIn, setOptIn] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("today");
-const statsCardRef = useRef(null);
+  const statsCardRef = useRef(null);
 
   const [book, setBook] = useState("");
   const [pages, setPages] = useState("");
@@ -66,7 +65,7 @@ const statsCardRef = useRef(null);
   const [booksFinished, setBooksFinished] = useState(0);
   const [finishedMsg, setFinishedMsg] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
-const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -79,16 +78,17 @@ const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
       setLoaded(true);
     })();
   }, [userId]);
-useEffect(() => {
-  if (tab === "leaderboard") {
-    setLoadingLeaderboard(true);
-    getLeaderboard().then((data) => {
-      setLeaderboard(data);
-      setLoadingLeaderboard(false);
-    });
-  }
-}, [tab]);
-  
+
+  useEffect(() => {
+    if (tab === "leaderboard") {
+      setLoadingLeaderboard(true);
+      getLeaderboard().then((data) => {
+        setLeaderboard(data);
+        setLoadingLeaderboard(false);
+      });
+    }
+  }, [tab]);
+
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   const xpInfo = useMemo(
     () => computeXP(entries, booksFinished, streaks.longest),
@@ -155,33 +155,35 @@ useEffect(() => {
       setTimeout(() => setFinishedMsg(""), 3000);
     }
   }
-async function shareStats() {
-  if (!statsCardRef.current) return;
-  const canvas = await html2canvas(statsCardRef.current, {
-    backgroundColor: "#FAF6EF",
-    scale: 2,
-  });
-  canvas.toBlob(async (blob) => {
-    const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: "إحصائياتي بنادي قراءات المنتدى",
-        });
-      } catch (e) {
-        // المستخدم ألغى المشاركة
+
+  async function shareStats() {
+    if (!statsCardRef.current) return;
+    const canvas = await html2canvas(statsCardRef.current, {
+      backgroundColor: "#FAF6EF",
+      scale: 2,
+    });
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: "إحصائياتي بنادي قراءات المنتدى",
+          });
+        } catch (e) {
+          // المستخدم ألغى المشاركة
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "my-reading-stats.png";
+        a.click();
+        URL.revokeObjectURL(url);
       }
-    } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "my-reading-stats.png";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  }, "image/png");
-}
+    }, "image/png");
+  }
+
   async function toggleOptIn() {
     const next = !optIn;
     setOptIn(next);
@@ -279,11 +281,11 @@ async function shareStats() {
 
         <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#FFFFFF", padding: 4, borderRadius: 10, border: "1px solid #E7DFCF" }}>
           {[
-  ["today", "اليوم"],
-  ["log", "السجل"],
-  ["stats", "الإحصائيات"],
-  ["leaderboard", "المتصدرين"],
-].map(([k, label]) => (
+            ["today", "اليوم"],
+            ["log", "السجل"],
+            ["stats", "الإحصائيات"],
+            ["leaderboard", "المتصدرين"],
+          ].map(([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -433,98 +435,99 @@ async function shareStats() {
 
         {tab === "stats" && (
           <>
-          <div ref={statsCardRef} style={{ background: cream, padding: 4 }}></div>
-            <div style={{ marginBottom: 16, textAlign: "center" }}>
-              <div style={{ color: navy, fontWeight: 700, fontSize: 16 }}>
-                المستوى {xpInfo.level} — {xpInfo.levelName}
+            <div ref={statsCardRef} style={{ background: cream, padding: 4 }}>
+              <div style={{ marginBottom: 16, textAlign: "center" }}>
+                <div style={{ color: navy, fontWeight: 700, fontSize: 16 }}>
+                  المستوى {xpInfo.level} — {xpInfo.levelName}
+                </div>
+                <div style={{ color: "#8B8272", fontSize: 12, margin: "4px 0 8px" }}>
+                  {xpInfo.totalXP} XP
+                </div>
+                <div style={{ background: "#EEE6D6", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: `${xpInfo.progress * 100}%`,
+                      background: orange,
+                      height: "100%",
+                      transition: "width .3s",
+                    }}
+                  />
+                </div>
+                <div style={{ color: "#A99B7E", fontSize: 11, marginTop: 4 }}>
+                  {xpInfo.nextThreshold - xpInfo.totalXP > 0
+                    ? `${xpInfo.nextThreshold - xpInfo.totalXP} XP للمستوى التالي`
+                    : "أعلى مستوى حاليًا 🏆"}
+                </div>
               </div>
-              <div style={{ color: "#8B8272", fontSize: 12, margin: "4px 0 8px" }}>
-                {xpInfo.totalXP} XP
-              </div>
-              <div style={{ background: "#EEE6D6", borderRadius: 6, height: 8, overflow: "hidden" }}>
-                <div
-                  style={{
-                    width: `${xpInfo.progress * 100}%`,
-                    background: orange,
-                    height: "100%",
-                    transition: "width .3s",
-                  }}
-                />
-              </div>
-              <div style={{ color: "#A99B7E", fontSize: 11, marginTop: 4 }}>
-                {xpInfo.nextThreshold - xpInfo.totalXP > 0
-                  ? `${xpInfo.nextThreshold - xpInfo.totalXP} XP للمستوى التالي`
-                  : "أعلى مستوى حاليًا 🏆"}
+              <div className="fade-in card" style={{ borderRadius: 12, padding: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                  <span style={{ color: "#8B8272", fontSize: 13 }}>صفحات هذا الشهر</span>
+                  <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{thisMonthPages}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                  <span style={{ color: "#8B8272", fontSize: 13 }}>مجموع أيام التسجيل</span>
+                  <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{new Set(entries.map((e) => e.date)).size}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                  <span style={{ color: "#8B8272", fontSize: 13 }}>كتب مختلفة سُجّلت</span>
+                  <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{bookCount}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
+                  <span style={{ color: "#8B8272", fontSize: 13 }}>كتب أُنهيت بالكامل</span>
+                  <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{booksFinished}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
+                  <span style={{ color: "#8B8272", fontSize: 13 }}>أطول سلسلة قراءة</span>
+                  <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{streaks.longest} يوم</span>
+                </div>
               </div>
             </div>
-            <div className="fade-in card" style={{ borderRadius: 12, padding: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-                <span style={{ color: "#8B8272", fontSize: 13 }}>صفحات هذا الشهر</span>
-                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{thisMonthPages}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-                <span style={{ color: "#8B8272", fontSize: 13 }}>مجموع أيام التسجيل</span>
-                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{new Set(entries.map((e) => e.date)).size}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-                <span style={{ color: "#8B8272", fontSize: 13 }}>كتب مختلفة سُجّلت</span>
-                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{bookCount}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EEE6D6" }}>
-                <span style={{ color: "#8B8272", fontSize: 13 }}>كتب أُنهيت بالكامل</span>
-                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{booksFinished}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
-                <span style={{ color: "#8B8272", fontSize: 13 }}>أطول سلسلة قراءة</span>
-                <span style={{ color: navy, fontSize: 14, fontWeight: 700 }}>{streaks.longest} يوم</span>
-              </div>
-                </div>
-              <button
-      onClick={shareStats}
-      style={{
-        width: "100%", marginTop: 12, padding: "10px 0", borderRadius: 8,
-        background: navy, color: "#FFFFFF", fontWeight: 600, fontSize: 13,
-        border: "none", cursor: "pointer",
-      }}
-    >
-      📤 مشاركة إحصائياتي
-    </button>
-  </>
-)}
+            <button
+              onClick={shareStats}
+              style={{
+                width: "100%", marginTop: 12, padding: "10px 0", borderRadius: 8,
+                background: navy, color: "#FFFFFF", fontWeight: 600, fontSize: 13,
+                border: "none", cursor: "pointer",
+              }}
+            >
+              📤 مشاركة إحصائياتي
+            </button>
+          </>
+        )}
 
         {tab === "leaderboard" && (
-  <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-    {loadingLeaderboard ? (
-      <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
-        ...جارِ التحميل
-      </div>
-    ) : leaderboard.length === 0 ? (
-      <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
-        لا يوجد قرّاء مشاركين بلوحة المتصدرين حاليًا
-      </div>
-    ) : (
-      leaderboard.map((r, i) => (
-        <div
-          key={i}
-          className="card"
-          style={{
-            borderRadius: 12, padding: "12px 16px", display: "flex",
-            alignItems: "center", justifyContent: "space-between",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ color: orange, fontWeight: 700, fontSize: 15, minWidth: 20 }}>{i + 1}</div>
-            <div style={{ color: navy, fontWeight: 600, fontSize: 14 }}>{r.name}</div>
+          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {loadingLeaderboard ? (
+              <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
+                ...جارِ التحميل
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 13, padding: "30px 0" }}>
+                لا يوجد قرّاء مشاركين بلوحة المتصدرين حاليًا
+              </div>
+            ) : (
+              leaderboard.map((r, i) => (
+                <div
+                  key={i}
+                  className="card"
+                  style={{
+                    borderRadius: 12, padding: "12px 16px", display: "flex",
+                    alignItems: "center", justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ color: orange, fontWeight: 700, fontSize: 15, minWidth: 20 }}>{i + 1}</div>
+                    <div style={{ color: navy, fontWeight: 600, fontSize: 14 }}>{r.name}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8B8272" }}>
+                    <span>🔥 {r.current} يوم</span>
+                    <span>📅 {r.days} يوم قراءة</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8B8272" }}>
-            <span>🔥 {r.current} يوم</span>
-            <span>📅 {r.days} يوم قراءة</span>
-          </div>
-        </div>
-      ))
-    )}
-  </div>
-)}
+        )}
       </div>
     </div>
   );
