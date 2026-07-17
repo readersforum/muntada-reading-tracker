@@ -256,41 +256,47 @@ export default function App() {
     }
   }
 
-  // التقاط ومشاركة بطاقة الإحصائيات الأدبية زاهية التصميم
+  /// التقاط ومشاركة بطاقة الإحصائيات الأدبية زاهية التصميم
   async function shareStats() {
     if (!statsCardRef.current) return;
     triggerHaptic("light");
     setSharing(true);
     try {
+      // التقاط الكرت وتحويله مباشرة إلى Base64 Data URL
       const canvas = await html2canvas(statsCardRef.current, {
         backgroundColor: "#FAF6EF",
         scale: 2,
         useCORS: true
       });
 
-      canvas.toBlob(async (blob) => {
-        const file = new File([blob], "reading-stats.png", { type: "image/png" });
-
-        if (navigator.share && navigator.canShare?.({ files: [file] })) {
-          try {
+      const dataUrl = canvas.toDataURL("image/png");
+      
+      // 1. المحاولة الأولى: استخدام المشاركة الأصلية للهاتف إن دُعمت
+      if (navigator.share && navigator.canShare) {
+        try {
+          const response = await fetch(dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], "reading-stats.png", { type: "image/png" });
+          
+          if (navigator.canShare({ files: [file] })) {
             await navigator.share({ files: [file], title: "إحصائياتي في منتدى النص والقارئ" });
             setSharing(false);
             return;
-          } catch (e) {
-            // تجاهل الخطأ للانتقال للنافذة المنبثقة البديلة الذكية
           }
+        } catch (e) {
+          // إذا فشلت مشاركة النظام، ننتقل تلقائياً للحل البديل في الأسفل
         }
+      }
 
-        const url = URL.createObjectURL(blob);
-        setShareImage(url);
-        setSharing(false);
-      }, "image/png");
+      // 2. الحل البديل والأضمن للتليجرام: عرض الصورة بصيغة Data URL داخل الـ Modal
+      setShareImage(dataUrl);
+      setSharing(false);
     } catch (e) {
       alert("تعذر إنشاء بطاقة الإحصائيات: " + e.message);
       setSharing(false);
     }
   }
-
+  
   async function toggleOptIn() {
     triggerHaptic("light");
     const next = !optIn;
