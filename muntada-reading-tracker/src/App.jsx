@@ -29,7 +29,11 @@ function calcStreaks(entries) {
     }
     longest = Math.max(longest, run);
   }
-  
+  const BADGE_DEFINITIONS = [
+  { id: 'avid_reader', title: 'قارئ نهم', icon: '📚', desc: 'أنهيت 5 كتب', check: (_, booksFinished) => booksFinished >= 5 },
+  { id: 'streak_master', title: 'المثابر', icon: '🔥', desc: 'سلسلة 7 أيام', check: (_, __, longest) => longest >= 7 },
+  { id: 'page_turner', title: 'حريف صفحات', icon: '📖', desc: 'قرأت 500 صفحة', check: (entries) => entries.reduce((s, e) => s + (Number(e.pages) || 0), 0) >= 500 },
+];
   const last = days[days.length - 1];
   const diffFromToday = dayDiff(last, todayKey());
   let current = 0;
@@ -88,7 +92,14 @@ export default function App() {
   const [finishedMsg, setFinishedMsg] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
-
+// حساب الأوسمة المكتسبة تلقائياً
+  const badges = useMemo(() => {
+    return BADGE_DEFINITIONS.map(b => ({
+      ...b,
+      achieved: b.check(entries, booksFinished, streaks.longest)
+    }));
+  }, [entries, booksFinished, streaks.longest]);
+  
   // تحميل البيانات الأولية
   useEffect(() => {
     (async () => {
@@ -615,6 +626,25 @@ export default function App() {
                     <span style={{ color: navy, fontSize: 15, fontWeight: 700 }}>{val}</span>
                   </div>
                 ))}
+                {/* قسم الأوسمة */}
+<div style={{ marginTop: 24 }}>
+  <div style={{ color: navy, fontWeight: 700, fontSize: 16, marginBottom: 12 }}>أوسمة الإنجاز 🏅</div>
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+    {badges.map(b => (
+      <div key={b.id} style={{ 
+        background: b.achieved ? "#FFFBF5" : "#F4F4F4", 
+        border: `1px solid ${b.achieved ? orange : "#E7DFCF"}`,
+        borderRadius: 12, padding: '12px 6px', textAlign: 'center',
+        opacity: b.achieved ? 1 : 0.5,
+        transition: "all 0.3s"
+      }}>
+        <div style={{ fontSize: 24, marginBottom: 4 }}>{b.icon}</div>
+        <div style={{ color: navy, fontSize: 11, fontWeight: 700 }}>{b.title}</div>
+        <div style={{ color: "#8B8272", fontSize: 9 }}>{b.desc}</div>
+      </div>
+    ))}
+  </div>
+</div>
               </div>
             </div>
             
