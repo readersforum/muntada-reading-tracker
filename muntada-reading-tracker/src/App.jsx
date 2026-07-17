@@ -166,25 +166,28 @@ const [sharing, setSharing] = useState(false);
       backgroundColor: "#FAF6EF",
       scale: 2,
     });
-    const dataUrl = canvas.toDataURL("image/png");
 
-    const blob = await (await fetch(dataUrl)).blob();
-    const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
 
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: "إحصائياتي بنادي قراءات المنتدى" });
-        setSharing(false);
-        return;
-      } catch (e) {
-        // فشلت المشاركة الأصلية، نكمل للطريقة البديلة
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "إحصائياتي بنادي قراءات المنتدى" });
+          setSharing(false);
+          return;
+        } catch (e) {
+          // فشلت المشاركة الأصلية، نكمل للطريقة البديلة
+        }
       }
-    }
-    setShareImage(dataUrl);
+
+      const url = URL.createObjectURL(blob);
+      setShareImage(url);
+      setSharing(false);
+    }, "image/png");
   } catch (e) {
     alert("صار خطأ بإنشاء الصورة: " + e.message);
+    setSharing(false);
   }
-  setSharing(false);
 }
 
   async function toggleOptIn() {
@@ -542,8 +545,12 @@ const [sharing, setSharing] = useState(false);
     }}
   >
     <div style={{ color: "#FFFFFF", fontSize: 13, marginBottom: 12, textAlign: "center" }}>
-      اضغط مطوّلاً على الصورة لحفظها أو مشاركتها 👇
-    </div>
+  اضغط مطوّلاً على الصورة لحفظها 👇
+  <br />
+  <span style={{ fontSize: 11, opacity: 0.8 }}>
+    إذا ما اشتغل الحفظ، اختر "Open in..." ثم احفظها من المتصفح
+  </span>
+</div>
     <img
       src={shareImage}
       alt="إحصائياتي"
