@@ -55,6 +55,8 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("today");
   const statsCardRef = useRef(null);
+const [shareImage, setShareImage] = useState(null);
+const [sharing, setSharing] = useState(false);
 
   const [book, setBook] = useState("");
   const [pages, setPages] = useState("");
@@ -157,32 +159,33 @@ export default function App() {
   }
 
   async function shareStats() {
-    if (!statsCardRef.current) return;
+  if (!statsCardRef.current) return;
+  setSharing(true);
+  try {
     const canvas = await html2canvas(statsCardRef.current, {
       backgroundColor: "#FAF6EF",
       scale: 2,
     });
-    canvas.toBlob(async (blob) => {
-      const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: "إحصائياتي بنادي قراءات المنتدى",
-          });
-        } catch (e) {
-          // المستخدم ألغى المشاركة
-        }
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "my-reading-stats.png";
-        a.click();
-        URL.revokeObjectURL(url);
+    const dataUrl = canvas.toDataURL("image/png");
+
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], "my-reading-stats.png", { type: "image/png" });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "إحصائياتي بنادي قراءات المنتدى" });
+        setSharing(false);
+        return;
+      } catch (e) {
+        // فشلت المشاركة الأصلية، نكمل للطريقة البديلة
       }
-    }, "image/png");
+    }
+    setShareImage(dataUrl);
+  } catch (e) {
+    alert("صار خطأ بإنشاء الصورة: " + e.message);
   }
+  setSharing(false);
+}
 
   async function toggleOptIn() {
     const next = !optIn;
@@ -529,6 +532,37 @@ export default function App() {
           </div>
         )}
       </div>
+      {shareImage && (
+  <div
+    onClick={() => setShareImage(null)}
+    style={{
+      position: "fixed", inset: 0, background: "rgba(19,42,68,0.92)", zIndex: 9999,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: 20,
+    }}
+  >
+    <div style={{ color: "#FFFFFF", fontSize: 13, marginBottom: 12, textAlign: "center" }}>
+      اضغط مطوّلاً على الصورة لحفظها أو مشاركتها 👇
+    </div>
+    <img
+      src={shareImage}
+      alt="إحصائياتي"
+      style={{ maxWidth: "100%", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}
+      onClick={(e) => e.stopPropagation()}
+    />
+   <button
+  onClick={shareStats}
+  disabled={sharing}
+  style={{
+    width: "100%", marginTop: 12, padding: "10px 0", borderRadius: 8,
+    background: navy, color: "#FFFFFF", fontWeight: 600, fontSize: 13,
+    border: "none", cursor: sharing ? "default" : "pointer", opacity: sharing ? 0.6 : 1,
+  }}
+>
+  {sharing ? "...جارِ التجهيز" : "📤 مشاركة إحصائياتي"}
+</button>
+  </div>
+)}
     </div>
   );
 }
