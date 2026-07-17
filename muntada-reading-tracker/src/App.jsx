@@ -4,6 +4,13 @@ import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, 
 import html2canvas from "html2canvas";
 import logo from "./assets/logo.png";
 
+// --- مصفوفة الأوسمة العالمية في مكانها الصحيح تماماً ---
+const BADGE_DEFINITIONS = [
+  { id: 'avid_reader', title: 'قارئ نهم', icon: '📚', desc: 'أنهيت 5 كتب', check: (_, booksFinished) => booksFinished >= 5 },
+  { id: 'streak_master', title: 'المثابر', icon: '🔥', desc: 'سلسلة 7 أيام', check: (_, __, longest) => longest >= 7 },
+  { id: 'page_turner', title: 'حريف صفحات', icon: '📖', desc: 'قرأت 500 صفحة', check: (entries) => entries.reduce((s, e) => s + (Number(e.pages) || 0), 0) >= 500 },
+];
+
 // --- دالات معالجة التواريخ والسلاسل بدقة حاسمة ---
 function todayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
@@ -29,11 +36,7 @@ function calcStreaks(entries) {
     }
     longest = Math.max(longest, run);
   }
-  const BADGE_DEFINITIONS = [
-  { id: 'avid_reader', title: 'قارئ نهم', icon: '📚', desc: 'أنهيت 5 كتب', check: (_, booksFinished) => booksFinished >= 5 },
-  { id: 'streak_master', title: 'المثابر', icon: '🔥', desc: 'سلسلة 7 أيام', check: (_, __, longest) => longest >= 7 },
-  { id: 'page_turner', title: 'حريف صفحات', icon: '📖', desc: 'قرأت 500 صفحة', check: (entries) => entries.reduce((s, e) => s + (Number(e.pages) || 0), 0) >= 500 },
-];
+
   const last = days[days.length - 1];
   const diffFromToday = dayDiff(last, todayKey());
   let current = 0;
@@ -92,13 +95,6 @@ export default function App() {
   const [finishedMsg, setFinishedMsg] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
-// حساب الأوسمة المكتسبة تلقائياً
-  const badges = useMemo(() => {
-    return BADGE_DEFINITIONS.map(b => ({
-      ...b,
-      achieved: b.check(entries, booksFinished, streaks.longest)
-    }));
-  }, [entries, booksFinished, streaks.longest]);
   
   // تحميل البيانات الأولية
   useEffect(() => {
@@ -129,13 +125,21 @@ export default function App() {
     }
   }, [tab]);
 
-  // حساب الحقول المحسوبة (Memos)
+  // حساب الحقول المحسوبة (Memos) - الترتيب السليم هنا حاسم جداً!
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   
   const xpInfo = useMemo(
     () => computeXP(entries, booksFinished, streaks.longest),
     [entries, booksFinished, streaks.longest]
   );
+
+  // حساب الأوسمة المكتسبة تلقائياً (بعد حساب الـ streaks لضمان وجود قيمة longest)
+  const badges = useMemo(() => {
+    return BADGE_DEFINITIONS.map(b => ({
+      ...b,
+      achieved: b.check(entries, booksFinished, streaks.longest)
+    }));
+  }, [entries, booksFinished, streaks.longest]);
   
   const hasLoggedToday = useMemo(() => entries.some((e) => e.date === todayKey()), [entries]);
 
@@ -179,7 +183,6 @@ export default function App() {
       mainBtn.setText("✓ حِفْظُ قِرَاءَةِ اليَوْمِ");
       mainBtn.show();
       
-      // تفادي التكرار والمشاكل البرمجية مع الميثودز
       const handleMainBtnClick = () => {
         const fakeEvent = { preventDefault: () => {} };
         submitToday(fakeEvent);
@@ -219,7 +222,6 @@ export default function App() {
     const next = [...entries.filter((e) => e.date !== todayKey()), entry];
     setEntries(next);
     
-    // تصفير الخانات
     setPages("");
     setMinutes("");
     setNote("");
@@ -246,7 +248,6 @@ export default function App() {
       triggerHaptic("success");
       setFinishedMsg(`🎉 تهانينا! أكملت "${targetBook}" بنجاح! +50 XP`);
       
-      // إزالة الكتاب من الخيارات النشطة فوراً برمجياً
       const updatedEntries = entries.filter(e => e.book.trim() !== targetBook);
       setEntries(updatedEntries);
       setSelectedBook("");
@@ -427,7 +428,6 @@ export default function App() {
               </div>
             ) : (
               <form onSubmit={submitToday} className="card" style={{ borderRadius: 14, padding: 18 }}>
-                {/* معالجة اختيار الكتب الذكية لتفادي تكرار الكتابة اليدوية */}
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <label style={{ color: navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
@@ -503,7 +503,6 @@ export default function App() {
 
                 {error && <div style={{ color: "#C0512E", fontSize: 13, marginBottom: 12, fontWeight: 600 }}>⚠️ {error}</div>}
                 
-                {/* زر الإرسال الاحتياطي في حال لم يظهر الـ Main Button بالأجهزة العادية */}
                 <button
                   type="submit"
                   style={{
@@ -584,7 +583,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- 3. تبويب الإحصائيات الفاخرة ومشاركة الكارت --- */}
+        {/* --- 3. تبويب الإحصائيات الفاخرة والأوسمة --- */}
         {tab === "stats" && (
           <>
             <div ref={statsCardRef} style={{ background: cream, padding: "8px 4px 4px" }}>
@@ -595,7 +594,6 @@ export default function App() {
                 <div style={{ color: "#8B8272", fontSize: 13, margin: "4px 0 10px", fontWeight: 600 }}>
                   {xpInfo.totalXP} نقطة خبرة (XP)
                 </div>
-                {/* شريط التقدم التفاعلي المستقر */}
                 <div style={{ background: "#EEE6D6", borderRadius: 8, height: 10, overflow: "hidden", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.06)" }}>
                   <div
                     style={{
@@ -626,25 +624,26 @@ export default function App() {
                     <span style={{ color: navy, fontSize: 15, fontWeight: 700 }}>{val}</span>
                   </div>
                 ))}
-                {/* قسم الأوسمة */}
-<div style={{ marginTop: 24 }}>
-  <div style={{ color: navy, fontWeight: 700, fontSize: 16, marginBottom: 12 }}>أوسمة الإنجاز 🏅</div>
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-    {badges.map(b => (
-      <div key={b.id} style={{ 
-        background: b.achieved ? "#FFFBF5" : "#F4F4F4", 
-        border: `1px solid ${b.achieved ? orange : "#E7DFCF"}`,
-        borderRadius: 12, padding: '12px 6px', textAlign: 'center',
-        opacity: b.achieved ? 1 : 0.5,
-        transition: "all 0.3s"
-      }}>
-        <div style={{ fontSize: 24, marginBottom: 4 }}>{b.icon}</div>
-        <div style={{ color: navy, fontSize: 11, fontWeight: 700 }}>{b.title}</div>
-        <div style={{ color: "#8B8272", fontSize: 9 }}>{b.desc}</div>
-      </div>
-    ))}
-  </div>
-</div>
+                
+                {/* قسم الأوسمة المتناسق والمستقر */}
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ color: navy, fontWeight: 700, fontSize: 16, marginBottom: 12 }}>أوسمة الإنجاز 🏅</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                    {badges.map(b => (
+                      <div key={b.id} style={{ 
+                        background: b.achieved ? "#FFFBF5" : "#F4F4F4", 
+                        border: `1px solid ${b.achieved ? orange : "#E7DFCF"}`,
+                        borderRadius: 12, padding: '12px 6px', textAlign: 'center',
+                        opacity: b.achieved ? 1 : 0.5,
+                        transition: "all 0.3s"
+                      }}>
+                        <div style={{ fontSize: 24, marginBottom: 4 }}>{b.icon}</div>
+                        <div style={{ color: navy, fontSize: 11, fontWeight: 700 }}>{b.title}</div>
+                        <div style={{ color: "#8B8272", fontSize: 9 }}>{b.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -708,7 +707,7 @@ export default function App() {
         )}
       </div>
 
-      {/* نافذة المنبثقة الحافظة لصور المطور في بيئات الأندرويد والآيفون */}
+      {/* نافذة المنبثقة الحافظة للصور */}
       {shareImage && (
         <div
           onClick={() => setShareImage(null)}
