@@ -166,7 +166,7 @@ export async function saveProfile(telegramId, { name, optIn }) {
   return true;
 }
 
-// يجيب قائمة المتصدرين (المستخدمين اللي فعّلوا opt_in) مرتبة حسب السلسلة الحالية
+// يجيب قائمة المتصدرين للشهر الحالي فقط (للمستخدمين اللي فعّلوا opt_in)
 export async function getLeaderboard() {
   const { data: users, error } = await supabase
     .from("users")
@@ -175,12 +175,18 @@ export async function getLeaderboard() {
 
   if (error || !users || users.length === 0) return [];
 
+  // تحديد بداية الشهر الحالي (مثلاً: 2026-07-01)
+  const now = new Date();
+  const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
   const results = [];
   for (const u of users) {
+    // جلب سجلات المستخدم الخاصة بالشهر الحالي فقط لغرض الصدارة الشهري
     const { data: logs } = await supabase
       .from("reading_logs")
       .select("entry_date")
-      .eq("user_id", u.id);
+      .eq("user_id", u.id)
+      .gte("entry_date", currentMonthStart);
 
     const dates = [...new Set((logs || []).map((l) => l.entry_date))].sort();
     let longest = 0,
@@ -214,14 +220,17 @@ export async function getLeaderboard() {
       }
     }
 
-    results.push({ name: u.name || "قارئ مجهول", current, longest, days: dates.length });
+    // إضافة القارئ للوحة الصدارة الشهري إذا كان لديه نشاط خلال هذا الشهر
+    if (dates.length > 0) {
+      results.push({ name: u.name || "قارئ مجهول", current, longest, days: dates.length });
+    }
   }
 
+  // الترتيب حسب السلسلة النشطة للشهر ثم إجمالي أيام القراءة في الشهر نفسه
   results.sort((a, b) => b.current - a.current || b.days - a.days);
   return results;
 }
-
-// يحفظ (أو يحدّث) قراءة اليوم لنفس المستخدم
+// يحفظ (أو يحدّث) قراءة كتاب معين للمستخدم في تاريخ اليوم
 export async function saveTodayEntry(telegramId, entry) {
   const { data: user } = await supabase
     .from("users")
@@ -243,7 +252,7 @@ export async function saveTodayEntry(telegramId, entry) {
       minutes: entry.minutes,
       note: entry.note,
     },
-    { onConflict: "user_id,entry_date" }
+    { onConflict: "user_id,entry_date,book" } // <-- تعديل مفتاح التعارض ليشمل اسم الكتاب
   );
 
   if (error) {
