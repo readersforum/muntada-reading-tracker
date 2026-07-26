@@ -261,14 +261,27 @@ setEntries(next);
     }
   }
 
-  /// التقاط ومشاركة بطاقة الإحصائيات الأدبية زاهية التصميم
+  /// التقاط ومشاركة بطاقة الإحصائيات الأدبية
   async function shareStats() {
     if (!statsCardRef.current) return;
     triggerHaptic("light");
     setSharing(true);
 
+    // صياغة النص المصاحب للمشاركة
+    const shareText = 
+`📊 بطاقة إنجازاتي القرائية في منتدى النص والقارئ 📚✨
+
+🌱 المستوى: ${xpInfo.levelName} (${xpInfo.totalXP} XP)
+📑 صفحات هذا الشهر: ${thisMonthPages} صفحة
+📅 مجموع الأيام: ${new Set(entries.map((e) => e.date)).size} يوم
+📖 الكتب المكتملة: ${booksFinished} كتاب
+🔥 أطول سلسلة قراءة: ${streaks.longest} يوم متتالي
+
+انضم إلينا ووثق قراءتك اليومية عبر البوت الرسمي:
+https://t.me/mtdreads_bot`;
+
     try {
-      // 1. التقاط الكرت وتحويله إلى صورة عالي الدقة
+      // 1. محاولة التقاط الصورة أولاً
       const canvas = await html2canvas(statsCardRef.current, {
         backgroundColor: "#FAF6EF",
         scale: 2,
@@ -279,7 +292,7 @@ setEntries(next);
 
       const dataUrl = canvas.toDataURL("image/png");
 
-      // 2. تجربة مشاركة الصورة كملف نصي/مباشر لمن يدعمها
+      // إذا وُجدت خاصية المشاركة المباشرة بالنظام (مثلاً في الهواتف)
       if (navigator.share && navigator.canShare) {
         try {
           const response = await fetch(dataUrl);
@@ -289,42 +302,40 @@ setEntries(next);
           if (navigator.canShare({ files: [file] })) {
             await navigator.share({
               files: [file],
-              title: "إحصائياتي في منتدى النص والقارئ",
-              text: `📊 بطاقة إنجازاتي القرائية:\n🌱 المستوى: ${xpInfo.levelName} (${xpInfo.totalXP} XP)\n🔥 السلسلة: ${streaks.current} أيام\n📑 صفحات هذا الشهر: ${thisMonthPages} صفحة`,
+              title: "إحصائياتي القرائية",
+              text: shareText,
             });
             setSharing(false);
             return;
           }
         } catch (e) {
-          // في حال ألغى المستخدم المشاركة أو لم تكتمل
+          // في حال إلغاء مشاركة النظام
         }
       }
 
-      // 3. الحل المباشر والأضمن داخل تليجرام: فتح معينة الصورة في النافذة المنبثقة (Modal)
+      // 2. إذا كنا داخل تليجرام، نفتح معاينة الصورة في Modal مع إمكانية المشاركة النصية الفورية
       setShareImage(dataUrl);
       setSharing(false);
     } catch (e) {
-      // إذا حدث أي خطأ في التقاط الصورة، نفتح مشاركة نصية كخطة طوارئ
-      const shareText = 
-`📊 **بطاقة إنجازاتي القرائية في منتدى النص والقارئ** 📚✨
-
-🌱 **المستوى:** ${xpInfo.levelName} (${xpInfo.totalXP} XP)
-📑 **صفحات هذا الشهر:** ${thisMonthPages} صفحة
-📅 **مجموع الأيام:** ${new Set(entries.map((e) => e.date)).size} يوم
-📖 **الكتب المكتملة:** ${booksFinished} كتاب
-🔥 **أطول سلسلة قراءة:** ${streaks.longest} يوم متتالي
-
-انضم إلينا ووثق قراءتك اليومية عبر البوت الرسمي:
-https://t.me/mtdreads_bot`;
-
-      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent("https://t.me/mtdreads_bot")}&text=${encodeURIComponent(shareText)}`;
-
-      if (window.Telegram?.WebApp?.openTelegramLink) {
-        window.Telegram.WebApp.openTelegramLink(shareUrl);
-      } else {
-        window.open(shareUrl, "_blank");
-      }
+      // 3. في حال حدوث أي خطأ في التقاط الصورة، يتم النسخ أو فتح رابط المشاركة المباشر
+      executeTextShare(shareText);
       setSharing(false);
+    }
+  }
+
+  // دالة مساعدة لمشاركة النص المباشر داخل تليجرام
+  function executeTextShare(text) {
+    const tg = window.Telegram?.WebApp;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent("https://t.me/mtdreads_bot")}&text=${encodeURIComponent(text)}`;
+
+    if (tg?.openLink) {
+      tg.openLink(shareUrl);
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert("تم نسخ بطاقة إحصائياتك بنجاح! يمكنك لصقها ومشاركتها في أي مكان 🚀");
+      });
+    } else {
+      window.open(shareUrl, "_blank");
     }
   }
   
@@ -455,11 +466,11 @@ https://t.me/mtdreads_bot`;
         {/* --- 1. تبويب اليوم --- */}
 {tab === "today" && (
   <div className="fade-in">
-    {/* عرض الكتب المسجلة لليوم إن وجدت مع إمكانية إضافة المزيد */}
+    {/* عرض الكتب المسجلة لليوم إن وجدت */}
     {hasLoggedToday && (
       <div className="card" style={{ borderRadius: 14, padding: 16, marginBottom: 16, background: "#FFFBF5" }}>
         <div style={{ color: orange, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          <Check size={16} /> الكتب التي سجّلت قراءتها اليوم:
+          <Check size={16} /> الكتب التي سجّلت قراءتها اليوم حتى الآن:
         </div>
         {entries.filter(e => e.date === todayKey()).map((e, idx) => (
           <div key={idx} style={{ color: navy, fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
@@ -469,7 +480,7 @@ https://t.me/mtdreads_bot`;
       </div>
     )}
 
-    {/* نموذج تسجيل القراءة */}
+    {/* نموذج تسجيل القراءة (يظهر دائماً للسماح بإضافة كتاب آخر) */}
     <form onSubmit={submitToday} className="card" style={{ borderRadius: 14, padding: 18 }}>
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -555,7 +566,7 @@ https://t.me/mtdreads_bot`;
         }}
       >
         <Feather size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
-        {hasLoggedToday ? "سجّل كتاباً آخر لليوم" : "سجّل قراءة اليوم بالتطبيق"}
+        {hasLoggedToday ? "سجّل كتاباً آخر لليوم 📚" : "سجّل قراءة اليوم بالتطبيق"}
       </button>
 
       <button
@@ -758,26 +769,47 @@ https://t.me/mtdreads_bot`;
             padding: 20,
           }}
         >
-          <div style={{ color: "#FFFFFF", fontSize: 14, marginBottom: 14, textAlign: "center", fontWeight: 500, lineHeight: 1.6 }}>
-            ✨ تم حياكة بطاقتك بنجاح!
+          <div style={{ color: "#FFFFFF", fontSize: 14, marginBottom: 12, textAlign: "center", fontWeight: 600, lineHeight: 1.6 }}>
+            ✨ تم إنشاء بطاقتك بنجاح!
             <br />
-            <span style={{ fontSize: 12, color: orange, fontWeight: 700 }}>اضغط مطوّلاً على الصورة في الأسفل لحفظها</span>
+            <span style={{ fontSize: 12, color: orange, fontWeight: 700 }}>اضغط مطوّلاً على الصورة لحفظها</span>
           </div>
+
           <img
             src={shareImage}
             alt="بطاقة إحصائيات منتدى النص والقارئ"
-            style={{ maxWidth: "100%", maxHeight: "70vh", borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,0.5)" }}
+            style={{ maxWidth: "100%", maxHeight: "60vh", borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,0.5)" }}
             onClick={(e) => e.stopPropagation()}
           />
-          <button
-            onClick={() => { triggerHaptic("light"); setShareImage(null); }}
-            style={{
-              marginTop: 18, padding: "10px 24px", borderRadius: 8, background: orange,
-              color: "#FFFFFF", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13
-            }}
-          >
-            إغلاق المعاينة
-          </button>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16, width: "100%", maxWidth: 320 }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("medium");
+                const text = `📊 **بطاقة إنجازاتي القرائية في منتدى النص والقارئ** 📚✨\n\n🌱 **المستوى:** ${xpInfo.levelName} (${xpInfo.totalXP} XP)\n📑 **صفحات هذا الشهر:** ${thisMonthPages} صفحة\n🔥 **أطول سلسلة:** ${streaks.longest} يوم\n\nانضم إلينا عبر البوت:\nhttps://t.me/ClubActivityBot`;
+                executeTextShare(text);
+              }}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 8, background: orange,
+                color: "#FFFFFF", fontWeight: 700, border: "none", cursor: "pointer", fontSize: 13
+              }}
+            >
+              🚀 إرسال للتليجرام
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { triggerHaptic("light"); setShareImage(null); }}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 8, background: "rgba(255,255,255,0.15)",
+                color: "#FFFFFF", fontWeight: 700, border: "1px solid rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 13
+              }}
+            >
+              إغلاق
+            </button>
+          </div>
         </div>
       )}
     </div>
