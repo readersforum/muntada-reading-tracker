@@ -4,14 +4,14 @@ import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, 
 import html2canvas from "html2canvas";
 import logo from "./assets/logo.png";
 
-// --- مصفوفة الأوسمة العالمية في مكانها الصحيح تماماً ---
+// --- مصفوفة الأوسمة العالمية ---
 const BADGE_DEFINITIONS = [
   { id: 'avid_reader', title: 'قارئ نهم', icon: '📚', desc: 'أنهيت 5 كتب', check: (_, booksFinished) => booksFinished >= 5 },
   { id: 'streak_master', title: 'المثابر', icon: '🔥', desc: 'سلسلة 7 أيام', check: (_, __, longest) => longest >= 7 },
   { id: 'page_turner', title: 'حريف صفحات', icon: '📖', desc: 'قرأت 500 صفحة', check: (entries) => entries.reduce((s, e) => s + (Number(e.pages) || 0), 0) >= 500 },
 ];
 
-// --- دالات معالجة التواريخ والسلاسل بدقة حاسمة ---
+// --- دالات معالجة التواريخ والسلاسل ---
 function todayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
@@ -60,7 +60,7 @@ function getTelegramName() {
   return u ? [u.first_name, u.last_name].filter(Boolean).join(" ") : "";
 }
 
-// --- دالة المساعدة للاهتزاز التفاعلي في تليجرام ---
+// --- دالة المساعدة للاهتزاز التفاعلي ---
 function triggerHaptic(type = "light") {
   if (window.Telegram?.WebApp?.HapticFeedback) {
     if (type === "success" || type === "error" || type === "warning") {
@@ -92,6 +92,7 @@ export default function App() {
   
   const [error, setError] = useState("");
   const [booksFinished, setBooksFinished] = useState(0);
+  const [finishedBooks, setFinishedBooks] = useState([]); // أسماء الكتب المكتملة
   const [finishedMsg, setFinishedMsg] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
@@ -105,11 +106,12 @@ export default function App() {
       setEntries(data.entries || []);
       setOptIn(data.optIn || false);
       setBooksFinished(data.booksFinished || 0);
+      setFinishedBooks(data.finishedBooks || []);
       setLoaded(true);
       
       if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.ready();
-        window.Telegram.WebApp.expand(); // ملء الشاشة لتجربة تطبيق كاملة
+        window.Telegram.WebApp.expand();
       }
     })();
   }, [userId]);
@@ -125,7 +127,7 @@ export default function App() {
     }
   }, [tab]);
 
-  // حساب الحقول المحسوبة (Memos) - الترتيب السليم هنا حاسم جداً!
+  // حساب الحقول المحسوبة
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   
   const xpInfo = useMemo(
@@ -133,7 +135,6 @@ export default function App() {
     [entries, booksFinished, streaks.longest]
   );
 
-  // حساب الأوسمة المكتسبة تلقائياً (بعد حساب الـ streaks لضمان وجود قيمة longest)
   const badges = useMemo(() => {
     return BADGE_DEFINITIONS.map(b => ({
       ...b,
@@ -150,9 +151,11 @@ export default function App() {
       .reduce((s, e) => s + (Number(e.pages) || 0), 0);
   }, [entries]);
 
+  // الكتب النشطة فقط (استثناء الكتب التي أُكْمِلَت بالفعل)
   const activeBooks = useMemo(() => {
-    return [...new Set(entries.map((e) => e.book.trim()).filter(Boolean))];
-  }, [entries]);
+    const allBooks = [...new Set(entries.map((e) => e.book.trim()).filter(Boolean))];
+    return allBooks.filter((book) => !finishedBooks.includes(book));
+  }, [entries, finishedBooks]);
 
   const bookCount = useMemo(() => activeBooks.length, [activeBooks]);
 
@@ -173,7 +176,7 @@ export default function App() {
     }
   }, [activeBooks, selectedBook, isNewBook]);
 
-  // دمج ميزة الـ Telegram Main Button (الزر السفلي الكبير لتسجيل القراءة)
+  // دمج ميزة Telegram Main Button
   useEffect(() => {
     const mainBtn = window.Telegram?.WebApp?.MainButton;
     if (!mainBtn) return;
@@ -219,13 +222,9 @@ export default function App() {
       note: note.trim(),
     };
 
-    // استبدل السطر في submitToday:
-// const next = [...entries.filter((e) => e.date !== todayKey()), entry];
-
-// بهذين السطرين:
-const otherEntries = entries.filter((e) => !(e.date === todayKey() && e.book.trim() === targetBook));
-const next = [...otherEntries, entry];
-setEntries(next);
+    const otherEntries = entries.filter((e) => !(e.date === todayKey() && e.book.trim() === targetBook));
+    const next = [...otherEntries, entry];
+    setEntries(next);
     
     setPages("");
     setMinutes("");
@@ -236,7 +235,7 @@ setEntries(next);
     await saveTodayEntry(userId, entry);
   }
 
-  // إنهاء كتاب وحصد 50 نقطة خبرة
+  // إنهاء كتاب بدون مسح سجلاته التاريخية
   async function handleFinishBook() {
     const targetBook = selectedBook.trim();
     if (!targetBook) {
@@ -250,24 +249,22 @@ setEntries(next);
     const ok = await finishBook(userId, targetBook);
     if (ok) {
       setBooksFinished((prev) => prev + 1);
+      setFinishedBooks((prev) => [...prev, targetBook]); // إضافة اسم الكتاب للكتب المتمّة
       triggerHaptic("success");
       setFinishedMsg(`🎉 تهانينا! أكملت "${targetBook}" بنجاح! +50 XP`);
       
-      const updatedEntries = entries.filter(e => e.book.trim() !== targetBook);
-      setEntries(updatedEntries);
       setSelectedBook("");
       
       setTimeout(() => setFinishedMsg(""), 4000);
     }
   }
 
-  /// التقاط ومشاركة بطاقة الإحصائيات الأدبية
+  /// التقاط ومشاركة بطاقة الإحصائيات
   async function shareStats() {
     if (!statsCardRef.current) return;
     triggerHaptic("light");
     setSharing(true);
 
-    // صياغة النص المصاحب للمشاركة
     const shareText = 
 `📊 بطاقة إنجازاتي القرائية في منتدى النص والقارئ 📚✨
 
@@ -281,7 +278,6 @@ setEntries(next);
 https://t.me/mtdreads_bot`;
 
     try {
-      // 1. محاولة التقاط الصورة أولاً
       const canvas = await html2canvas(statsCardRef.current, {
         backgroundColor: "#FAF6EF",
         scale: 2,
@@ -292,7 +288,6 @@ https://t.me/mtdreads_bot`;
 
       const dataUrl = canvas.toDataURL("image/png");
 
-      // إذا وُجدت خاصية المشاركة المباشرة بالنظام (مثلاً في الهواتف)
       if (navigator.share && navigator.canShare) {
         try {
           const response = await fetch(dataUrl);
@@ -309,21 +304,18 @@ https://t.me/mtdreads_bot`;
             return;
           }
         } catch (e) {
-          // في حال إلغاء مشاركة النظام
+          // إلغاء مشاركة النظام
         }
       }
 
-      // 2. إذا كنا داخل تليجرام، نفتح معاينة الصورة في Modal مع إمكانية المشاركة النصية الفورية
       setShareImage(dataUrl);
       setSharing(false);
     } catch (e) {
-      // 3. في حال حدوث أي خطأ في التقاط الصورة، يتم النسخ أو فتح رابط المشاركة المباشر
       executeTextShare(shareText);
       setSharing(false);
     }
   }
 
-  // دالة مساعدة لمشاركة النص المباشر داخل تليجرام
   function executeTextShare(text) {
     const tg = window.Telegram?.WebApp;
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent("https://t.me/mtdreads_bot")}&text=${encodeURIComponent(text)}`;
@@ -384,7 +376,7 @@ https://t.me/mtdreads_bot`;
       `}</style>
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 30px" }}>
-        {/* الهيدر العلوي الأنيق للمنتدى */}
+        {/* الهيدر العلوي */}
         <div
           className="text-center"
           style={{
@@ -435,11 +427,11 @@ https://t.me/mtdreads_bot`;
           <div className="text-center" style={{ flex: 1 }}>
             <BookOpen size={22} style={{ color: navy, margin: "0 auto 4px" }} />
             <div style={{ color: navy, fontWeight: 800, fontSize: 20 }}>{bookCount}</div>
-            <div style={{ color: "#8B8272", fontSize: 12, fontWeight: 500 }}>كتب مسجّلة</div>
+            <div style={{ color: "#8B8272", fontSize: 12, fontWeight: 500 }}>كتب نشطة</div>
           </div>
         </div>
 
-        {/* نظام التبويبات المتطور */}
+        {/* نظام التبويبات */}
         <div style={{ display: "flex", gap: 6, marginBottom: 18, background: "#FFFFFF", padding: 4, borderRadius: 12, border: "1px solid #E7DFCF" }}>
           {[
             ["today", "اليوم"],
@@ -464,145 +456,144 @@ https://t.me/mtdreads_bot`;
         </div>
 
         {/* --- 1. تبويب اليوم --- */}
-{tab === "today" && (
-  <div className="fade-in">
-    {/* عرض الكتب المسجلة لليوم إن وجدت */}
-    {hasLoggedToday && (
-      <div className="card" style={{ borderRadius: 14, padding: 16, marginBottom: 16, background: "#FFFBF5" }}>
-        <div style={{ color: orange, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          <Check size={16} /> الكتب التي سجّلت قراءتها اليوم حتى الآن:
-        </div>
-        {entries.filter(e => e.date === todayKey()).map((e, idx) => (
-          <div key={idx} style={{ color: navy, fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
-            • {e.book} ({e.pages} صفحة · {e.minutes} دقيقة)
-          </div>
-        ))}
-      </div>
-    )}
+        {tab === "today" && (
+          <div className="fade-in">
+            {hasLoggedToday && (
+              <div className="card" style={{ borderRadius: 14, padding: 16, marginBottom: 16, background: "#FFFBF5" }}>
+                <div style={{ color: orange, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <Check size={16} /> الكتب التي سجّلت قراءتها اليوم حتى الآن:
+                </div>
+                {entries.filter(e => e.date === todayKey()).map((e, idx) => (
+                  <div key={idx} style={{ color: navy, fontSize: 14, fontWeight: 600, padding: "4px 0" }}>
+                    • {e.book} ({e.pages} صفحة · {e.minutes} دقيقة)
+                  </div>
+                ))}
+              </div>
+            )}
 
-    {/* نموذج تسجيل القراءة (يظهر دائماً للسماح بإضافة كتاب آخر) */}
-    <form onSubmit={submitToday} className="card" style={{ borderRadius: 14, padding: 18 }}>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <label style={{ color: navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-            <Bookmark size={14} style={{ color: orange }} /> اسم الكتاب المراد تسجيله
-          </label>
-          {activeBooks.length > 0 && (
+            <form onSubmit={submitToday} className="card" style={{ borderRadius: 14, padding: 18 }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ color: navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                    <Bookmark size={14} style={{ color: orange }} /> اسم الكتاب المراد تسجيله
+                  </label>
+                  {activeBooks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { triggerHaptic("light"); setIsNewBook(!isNewBook); setSelectedBook(""); }}
+                      style={{ background: "transparent", border: "none", color: orange, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {isNewBook ? "اختر من كتبك السابقة" : "＋ كتاب جديد"}
+                    </button>
+                  )}
+                </div>
+
+                {isNewBook || activeBooks.length === 0 ? (
+                  <input
+                    value={selectedBook}
+                    onChange={(e) => setSelectedBook(e.target.value)}
+                    placeholder="مثال: رجال في الشمس"
+                    style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                  />
+                ) : (
+                  <div style={{ position: "relative" }}>
+                    <select
+                      value={selectedBook}
+                      onChange={(e) => setSelectedBook(e.target.value)}
+                      style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, paddingLeft: 30 }}
+                    >
+                      {activeBooks.map((b, idx) => (
+                        <option key={idx} value={b}>{b}</option>
+                      ))}
+                    </select>
+                    <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8B8272", pointerEvents: "none", fontSize: 10 }}>▼</div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>عدد الصفحات</label>
+                  <input
+                    type="number" min="0" inputMode="numeric"
+                    value={pages}
+                    onChange={(e) => setPages(e.target.value)}
+                    placeholder="كم صفحة؟"
+                    style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6 }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>دقائق القراءة</label>
+                  <input
+                    type="number" min="0" inputMode="numeric"
+                    value={minutes}
+                    onChange={(e) => setMinutes(e.target.value)}
+                    placeholder="الوقت بالدقائق"
+                    style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>اقتباس أو ملحوظة نقدية (اختياري)</label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="جملة لامست فكرك وقاربت وجدانك اليوم..."
+                  style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6, resize: "none" }}
+                />
+              </div>
+
+              {error && <div style={{ color: "#C0512E", fontSize: 13, marginBottom: 12, fontWeight: 600 }}>⚠️ {error}</div>}
+              
+              <button
+                type="submit"
+                style={{
+                  width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
+                  background: orange, color: "#FFFFFF", fontWeight: 700, fontSize: 15, cursor: "pointer",
+                  boxShadow: "0 4px 10px rgba(224,141,60,0.2)"
+                }}
+              >
+                <Feather size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
+                {hasLoggedToday ? "سجّل كتاباً آخر لليوم 📚" : "سجّل قراءة اليوم بالتطبيق"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFinishBook}
+                style={{
+                  width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
+                  background: "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
+                  marginTop: 10,
+                }}
+              >
+                🎉 لقد أتممت قراءة هذا الكتاب بالكامل (+50 XP)
+              </button>
+            </form>
+
+            {finishedMsg && (
+              <div className="fade-in" style={{ textAlign: "center", color: orange, fontSize: 14, marginTop: 14, fontWeight: 700, background: "#FFFFFF", padding: "10px", borderRadius: 10, border: `1px dashed ${orange}` }}>
+                {finishedMsg}
+              </div>
+            )}
+
             <button
-              type="button"
-              onClick={() => { triggerHaptic("light"); setIsNewBook(!isNewBook); setSelectedBook(""); }}
-              style={{ background: "transparent", border: "none", color: orange, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              onClick={toggleOptIn}
+              style={{
+                width: "100%", marginTop: 14, padding: "12px 14px", borderRadius: 10,
+                background: optIn ? "#FDF1E3" : "#FFFFFF", border: `1px solid ${optIn ? orange : "#DCD2BC"}`,
+                color: optIn ? orange : "#8B8272", fontSize: 13, display: "flex",
+                alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", fontWeight: 700,
+              }}
             >
-              {isNewBook ? "اختر من كتبك السابقة" : "＋ كتاب جديد"}
+              <Users size={16} />
+              {optIn ? "أنت تظهر الآن علناً في لوحة متصدري المنتدى" : "إظهار الهوية والتقدم في لوحة المتصدرين العامة"}
+              {optIn && <X size={14} style={{ marginRight: "auto" }} />}
             </button>
-          )}
-        </div>
-
-        {isNewBook || activeBooks.length === 0 ? (
-          <input
-            value={selectedBook}
-            onChange={(e) => setSelectedBook(e.target.value)}
-            placeholder="مثال: رجال في الشمس"
-            style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
-          />
-        ) : (
-          <div style={{ position: "relative" }}>
-            <select
-              value={selectedBook}
-              onChange={(e) => setSelectedBook(e.target.value)}
-              style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, paddingLeft: 30 }}
-            >
-              {activeBooks.map((b, idx) => (
-                <option key={idx} value={b}>{b}</option>
-              ))}
-            </select>
-            <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#8B8272", pointerEvents: "none", fontSize: 10 }}>▼</div>
           </div>
         )}
-      </div>
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>عدد الصفحات</label>
-          <input
-            type="number" min="0" inputMode="numeric"
-            value={pages}
-            onChange={(e) => setPages(e.target.value)}
-            placeholder="كم صفحة؟"
-            style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6 }}
-          />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>دقائق القراءة</label>
-          <input
-            type="number" min="0" inputMode="numeric"
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-            placeholder="الوقت بالدقائق"
-            style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6 }}
-          />
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>اقتباس أو ملحوظة نقدية (اختياري)</label>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={2}
-          placeholder="جملة لامست فكرك وقاربت وجدانك اليوم..."
-          style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6, resize: "none" }}
-        />
-      </div>
-
-      {error && <div style={{ color: "#C0512E", fontSize: 13, marginBottom: 12, fontWeight: 600 }}>⚠️ {error}</div>}
-      
-      <button
-        type="submit"
-        style={{
-          width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
-          background: orange, color: "#FFFFFF", fontWeight: 700, fontSize: 15, cursor: "pointer",
-          boxShadow: "0 4px 10px rgba(224,141,60,0.2)"
-        }}
-      >
-        <Feather size={16} style={{ verticalAlign: "-3px", marginLeft: 6 }} />
-        {hasLoggedToday ? "سجّل كتاباً آخر لليوم 📚" : "سجّل قراءة اليوم بالتطبيق"}
-      </button>
-
-      <button
-        type="button"
-        onClick={handleFinishBook}
-        style={{
-          width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
-          background: "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
-          marginTop: 10,
-        }}
-      >
-        🎉 لقد أتممت قراءة هذا الكتاب بالكامل (+50 XP)
-      </button>
-    </form>
-
-    {finishedMsg && (
-      <div className="fade-in" style={{ textAlign: "center", color: orange, fontSize: 14, marginTop: 14, fontWeight: 700, background: "#FFFFFF", padding: "10px", borderRadius: 10, border: `1px dashed ${orange}` }}>
-        {finishedMsg}
-      </div>
-    )}
-
-    <button
-      onClick={toggleOptIn}
-      style={{
-        width: "100%", marginTop: 14, padding: "12px 14px", borderRadius: 10,
-        background: optIn ? "#FDF1E3" : "#FFFFFF", border: `1px solid ${optIn ? orange : "#DCD2BC"}`,
-        color: optIn ? orange : "#8B8272", fontSize: 13, display: "flex",
-        alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", fontWeight: 700,
-      }}
-    >
-      <Users size={16} />
-      {optIn ? "أنت تظهر الآن علناً في لوحة متصدري المنتدى" : "إظهار الهوية والتقدم في لوحة المتصدرين العامة"}
-      {optIn && <X size={14} style={{ marginRight: "auto" }} />}
-    </button>
-  </div>
-)}
         {/* --- 2. تبويب السجل التاريخي --- */}
         {tab === "log" && (
           <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -635,7 +626,7 @@ https://t.me/mtdreads_bot`;
           </div>
         )}
 
-        {/* --- 3. تبويب الإحصائيات الفاخرة والأوسمة --- */}
+        {/* --- 3. تبويب الإحصائيات والأوسمة --- */}
         {tab === "stats" && (
           <>
             <div ref={statsCardRef} style={{ background: cream, padding: "8px 4px 4px" }}>
@@ -667,7 +658,7 @@ https://t.me/mtdreads_bot`;
                 {[
                   ["صفحات هذا الشهر", `${thisMonthPages} صفحة`],
                   ["مجموع أيام المطالعة", `${new Set(entries.map((e) => e.date)).size} يوم`],
-                  ["كتب مختلفة جرى تتبعها", `${bookCount} كتاب`],
+                  ["كتب نشطة قيد القراءة", `${bookCount} كتاب`],
                   ["رصيد الكتب المنتهية", `${booksFinished} كتاب مكتمل`],
                   ["أطول سلسلة قراءة مستمرة", `${streaks.longest} يوم متتالي`],
                 ].map(([lbl, val], idx, arr) => (
@@ -677,7 +668,6 @@ https://t.me/mtdreads_bot`;
                   </div>
                 ))}
                 
-                {/* قسم الأوسمة المتناسق والمستقر */}
                 <div style={{ marginTop: 24 }}>
                   <div style={{ color: navy, fontWeight: 700, fontSize: 16, marginBottom: 12 }}>أوسمة الإنجاز 🏅</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
@@ -713,7 +703,7 @@ https://t.me/mtdreads_bot`;
           </>
         )}
 
-        {/* --- 4. تبويب المتصدرين المشترك --- */}
+        {/* --- 4. تبويب المتصدرين --- */}
         {tab === "leaderboard" && (
           <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {loadingLeaderboard ? (
@@ -759,7 +749,7 @@ https://t.me/mtdreads_bot`;
         )}
       </div>
 
-      {/* نافذة المنبثقة الحافظة للصور */}
+      {/* النافذة المنبثقة لمعاينة الصورة والمشاركة */}
       {shareImage && (
         <div
           onClick={() => setShareImage(null)}
@@ -788,7 +778,7 @@ https://t.me/mtdreads_bot`;
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("medium");
-                const text = `📊 **بطاقة إنجازاتي القرائية في منتدى النص والقارئ** 📚✨\n\n🌱 **المستوى:** ${xpInfo.levelName} (${xpInfo.totalXP} XP)\n📑 **صفحات هذا الشهر:** ${thisMonthPages} صفحة\n🔥 **أطول سلسلة:** ${streaks.longest} يوم\n\nانضم إلينا عبر البوت:\nhttps://t.me/ClubActivityBot`;
+                const text = `📊 **بطاقة إنجازاتي القرائية في منتدى النص والقارئ** 📚✨\n\n🌱 **المستوى:** ${xpInfo.levelName} (${xpInfo.totalXP} XP)\n📑 **صفحات هذا الشهر:** ${thisMonthPages} صفحة\n🔥 **أطول سلسلة:** ${streaks.longest} يوم\n\nانضم إلينا عبر البوت:\nhttps://t.me/mtdreads_bot`;
                 executeTextShare(text);
               }}
               style={{
