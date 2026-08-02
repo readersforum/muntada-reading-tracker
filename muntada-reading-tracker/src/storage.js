@@ -243,7 +243,7 @@ export async function saveTodayEntry(telegramId, entry) {
     return false;
   }
 
-  const { error } = await supabase.from("reading_logs").upsert(
+  const { error } = await supabase.from("reading_logs").insert(
     {
       user_id: user.id,
       entry_date: entry.date,
