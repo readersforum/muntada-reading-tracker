@@ -243,16 +243,14 @@ export async function saveTodayEntry(telegramId, entry) {
     return false;
   }
 
-  const { error } = await supabase.from("reading_logs").insert([
-  {
-    user_id: user.id,
-    entry_date: entry.date,
-    book: entry.book,
-    pages: entry.pages,
-    minutes: entry.minutes,
-    note: entry.note,
-  }
-]);
+  const { error } = await supabase.from("reading_logs").insert({
+  user_id: user.id,
+  entry_date: entry.date,
+  book: entry.book,
+  pages: Number(entry.pages) || 0,
+  minutes: Number(entry.minutes) || 0,
+  note: entry.note || "",
+});
   if (error) {
     debugAlert("خطأ بحفظ القراءة: " + error.message);
     return false;
