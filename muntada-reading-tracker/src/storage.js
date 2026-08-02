@@ -243,18 +243,16 @@ export async function saveTodayEntry(telegramId, entry) {
     return false;
   }
 
-  const { error } = await supabase.from("reading_logs").insert(
-    {
-      user_id: user.id,
-      entry_date: entry.date,
-      book: entry.book,
-      pages: entry.pages,
-      minutes: entry.minutes,
-      note: entry.note,
-    },
-    { onConflict: "user_id,entry_date,book" } // <-- تعديل مفتاح التعارض ليشمل اسم الكتاب
-  );
-
+  const { error } = await supabase.from("reading_logs").insert([
+  {
+    user_id: user.id,
+    entry_date: entry.date,
+    book: entry.book,
+    pages: entry.pages,
+    minutes: entry.minutes,
+    note: entry.note,
+  }
+]);
   if (error) {
     debugAlert("خطأ بحفظ القراءة: " + error.message);
     return false;
