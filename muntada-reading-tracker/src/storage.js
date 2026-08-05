@@ -2,7 +2,6 @@ import { supabase } from "./supabaseClient.js";
 
 function debugAlert(message) {
   console.error(message);
-  // عرض مضمون على الشاشة نفسها (يشتغل بأي بيئة، بديل عن tg.showAlert)
   let box = document.getElementById("debug-error-box");
   if (!box) {
     box = document.createElement("div");
@@ -42,10 +41,10 @@ async function ensureUser(telegramId, name) {
   return data;
 }
 
-// يجيب بيانات المستخدم كاملة (الاسم + optIn + كل سجلات القراءة + عدد الكتب المنتهية)
+// يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, fallbackName) {
   const user = await ensureUser(telegramId, fallbackName);
-  if (!user) return { name: fallbackName || "", optIn: false, entries: [], booksFinished: 0 };
+  if (!user) return { name: fallbackName || "", optIn: false, entries: [], booksFinished: 0, completedBooksList: [] };
 
   const { data: logs, error } = await supabase
     .from("reading_logs")
@@ -61,25 +60,32 @@ export async function loadUserData(telegramId, fallbackName) {
     id: l.id,
     date: l.entry_date,
     book: l.book,
+    author: l.author || "",
+    totalPages: l.total_pages || 0,
     pages: l.pages,
     minutes: l.minutes,
     note: l.note || "",
   }));
 
-  const { count } = await supabase
+  // جلب أرشيف الكتب المنتهية مع تفاصيلها
+  const { data: completions } = await supabase
     .from("book_completions")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id);
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  const completedBooksList = completions || [];
 
   return {
     name: user.name || fallbackName || "",
     optIn: !!user.opt_in,
     entries,
-    booksFinished: count || 0,
+    booksFinished: completedBooksList.length,
+    completedBooksList,
   };
 }
 
-// يسجّل إنهاء كتاب (زر يدوي يضغطه المستخدم)
+// يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
   const { data: user } = await supabase
     .from("users")
@@ -89,21 +95,59 @@ export async function finishBook(telegramId, bookTitle) {
 
   if (!user) {
     debugAlert("لم يتم العثور على المستخدم");
-    return false;
+    return { success: false, message: "لم يتم العثور على المستخدم" };
   }
 
+  // جلب جميع قراءات هذا الكتاب للمستخدم
+  const { data: logs } = await supabase
+    .from("reading_logs")
+    .select("pages, total_pages, entry_date, author")
+    .eq("user_id", user.id)
+    .eq("book", bookTitle);
+
+  if (!logs || logs.length === 0) {
+    return { success: false, message: "لا تملك سجلات قراءة لهذا الكتاب!" };
+  }
+
+  // 1. حساب إجمالي الصفحات المسجلة للكتاب
+  const totalReadPages = logs.reduce((sum, log) => sum + (log.pages || 0), 0);
+  const targetTotalPages = logs[0]?.total_pages || 0;
+  const author = logs[0]?.author || "";
+
+  // 2. التحقق من شرط الصفحات الكلية
+  if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
+    const remaining = targetTotalPages - totalReadPages;
+    return { 
+      success: false, 
+      message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
+    };
+  }
+
+  // 3. التحقق من التثبيت بأن القراءة تمت على مدار أيام وليس جلسة واحدة (اختياري / مرن)
+  const uniqueDays = new Set(logs.map(l => l.entry_date)).size;
+  if (uniqueDays < 1) {
+    return { success: false, message: "يجب تسجيل القراءة على مدار أيام أولاً." };
+  }
+
+  // تسجيل الإتمام في قاعدة البيانات
   const { error } = await supabase
     .from("book_completions")
-    .insert({ user_id: user.id, book_title: bookTitle });
+    .insert({ 
+      user_id: user.id, 
+      book_title: bookTitle,
+      author: author,
+      total_pages: targetTotalPages
+    });
 
   if (error) {
     debugAlert("خطأ بتسجيل إنهاء الكتاب: " + error.message);
-    return false;
+    return { success: false, message: error.message };
   }
-  return true;
+
+  return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
 }
 
-// عتبات المستويات (مجموع XP التراكمي المطلوب للوصول لكل مستوى)
+// عتبات المستويات والـ XP
 const LEVEL_THRESHOLDS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000];
 const LEVEL_NAMES = [
   "قارئ مبتدئ 🌱",
@@ -119,7 +163,6 @@ const LEVEL_NAMES = [
 ];
 const STREAK_MILESTONES = [7, 14, 30, 60, 100];
 
-// يحسب الـ XP والمستوى ديناميكيًا من بيانات المستخدم (بدون تخزين رقم متغير)
 export function computeXP(entries, booksFinished, longestStreak) {
   const daysXP = new Set(entries.map((e) => e.date)).size * 10;
   const totalPages = entries.reduce((s, e) => s + (e.pages || 0), 0);
@@ -152,7 +195,6 @@ export function computeXP(entries, booksFinished, longestStreak) {
   };
 }
 
-// يحفظ اسم المستخدم و/أو optIn
 export async function saveProfile(telegramId, { name, optIn }) {
   const { error } = await supabase
     .from("users")
@@ -166,7 +208,6 @@ export async function saveProfile(telegramId, { name, optIn }) {
   return true;
 }
 
-// يجيب قائمة المتصدرين للشهر الحالي فقط (للمستخدمين اللي فعّلوا opt_in)
 export async function getLeaderboard() {
   const { data: users, error } = await supabase
     .from("users")
@@ -175,13 +216,11 @@ export async function getLeaderboard() {
 
   if (error || !users || users.length === 0) return [];
 
-  // تحديد بداية الشهر الحالي (مثلاً: 2026-07-01)
   const now = new Date();
   const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
   const results = [];
   for (const u of users) {
-    // جلب سجلات المستخدم الخاصة بالشهر الحالي فقط لغرض الصدارة الشهري
     const { data: logs } = await supabase
       .from("reading_logs")
       .select("entry_date")
@@ -220,17 +259,16 @@ export async function getLeaderboard() {
       }
     }
 
-    // إضافة القارئ للوحة الصدارة الشهري إذا كان لديه نشاط خلال هذا الشهر
     if (dates.length > 0) {
       results.push({ name: u.name || "قارئ مجهول", current, longest, days: dates.length });
     }
   }
 
-  // الترتيب حسب السلسلة النشطة للشهر ثم إجمالي أيام القراءة في الشهر نفسه
   results.sort((a, b) => b.current - a.current || b.days - a.days);
   return results;
 }
-// يحفظ (أو يحدّث) قراءة كتاب معين للمستخدم في تاريخ اليوم
+
+// يحفظ قراءة اليوم مع إضافة اسم المؤلف وعدد الصفحات الإجمالي
 export async function saveTodayEntry(telegramId, entry) {
   const { data: user } = await supabase
     .from("users")
@@ -244,13 +282,16 @@ export async function saveTodayEntry(telegramId, entry) {
   }
 
   const { error } = await supabase.from("reading_logs").insert({
-  user_id: user.id,
-  entry_date: entry.date,
-  book: entry.book,
-  pages: Number(entry.pages) || 0,
-  minutes: Number(entry.minutes) || 0,
-  note: entry.note || "",
-});
+    user_id: user.id,
+    entry_date: entry.date,
+    book: entry.book,
+    author: entry.author || "",
+    total_pages: Number(entry.totalPages) || 0,
+    pages: Number(entry.pages) || 0,
+    minutes: Number(entry.minutes) || 0,
+    note: entry.note || "",
+  });
+
   if (error) {
     debugAlert("خطأ بحفظ القراءة: " + error.message);
     return false;

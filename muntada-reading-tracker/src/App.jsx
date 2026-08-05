@@ -1,17 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X, PlusCircle, Bookmark } from "lucide-react";
+import { Star, BookOpen, Calendar, TrendingUp, Feather, Users, Check, X, Bookmark, Award } from "lucide-react";
 import { loadUserData, saveProfile, saveTodayEntry, getLeaderboard, finishBook, computeXP } from "./storage.js";
 import html2canvas from "html2canvas";
 import logo from "./assets/logo.png";
 
-// --- مصفوفة الأوسمة العالمية ---
 const BADGE_DEFINITIONS = [
   { id: 'avid_reader', title: 'قارئ نهم', icon: '📚', desc: 'أنهيت 5 كتب', check: (_, booksFinished) => booksFinished >= 5 },
   { id: 'streak_master', title: 'المثابر', icon: '🔥', desc: 'سلسلة 7 أيام', check: (_, __, longest) => longest >= 7 },
   { id: 'page_turner', title: 'حريف صفحات', icon: '📖', desc: 'قرأت 500 صفحة', check: (entries) => entries.reduce((s, e) => s + (Number(e.pages) || 0), 0) >= 500 },
 ];
 
-// --- دالات معالجة التواريخ والسلاسل ---
 function todayKey(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
@@ -60,7 +58,6 @@ function getTelegramName() {
   return u ? [u.first_name, u.last_name].filter(Boolean).join(" ") : "";
 }
 
-// --- دالة المساعدة للاهتزاز التفاعلي ---
 function triggerHaptic(type = "light") {
   if (window.Telegram?.WebApp?.HapticFeedback) {
     if (type === "success" || type === "error" || type === "warning") {
@@ -83,21 +80,23 @@ export default function App() {
   const [shareImage, setShareImage] = useState(null);
   const [sharing, setSharing] = useState(false);
 
-  // حقول الإدخال والتحكم
+  // حقول الإدخال والتحكم المحدثة
   const [selectedBook, setSelectedBook] = useState(""); 
-  const [isNewBook, setIsNewBook] = useState(false);    
+  const [author, setAuthor] = useState("");
+  const [totalPages, setTotalPages] = useState("");
+  const [isNewBook, setIsNewBook] = useState(false);
+  const [isClubBook, setIsClubBook] = useState(true);
   const [pages, setPages] = useState("");
   const [minutes, setMinutes] = useState("");
   const [note, setNote] = useState("");
   
   const [error, setError] = useState("");
   const [booksFinished, setBooksFinished] = useState(0);
-  const [finishedBooks, setFinishedBooks] = useState([]); // أسماء الكتب المكتملة
+  const [completedBooksList, setCompletedBooksList] = useState([]);
   const [finishedMsg, setFinishedMsg] = useState("");
   const [leaderboard, setLeaderboard] = useState([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   
-  // تحميل البيانات الأولية
   useEffect(() => {
     (async () => {
       const telegramName = getTelegramName();
@@ -106,7 +105,7 @@ export default function App() {
       setEntries(data.entries || []);
       setOptIn(data.optIn || false);
       setBooksFinished(data.booksFinished || 0);
-      setFinishedBooks(data.finishedBooks || []);
+      setCompletedBooksList(data.completedBooksList || []);
       setLoaded(true);
       
       if (window.Telegram?.WebApp) {
@@ -116,7 +115,6 @@ export default function App() {
     })();
   }, [userId]);
 
-  // جلب المتصدرين عند فتح التبويب
   useEffect(() => {
     if (tab === "leaderboard") {
       setLoadingLeaderboard(true);
@@ -127,7 +125,6 @@ export default function App() {
     }
   }, [tab]);
 
-  // حساب الحقول المحسوبة
   const streaks = useMemo(() => calcStreaks(entries), [entries]);
   
   const xpInfo = useMemo(
@@ -151,13 +148,32 @@ export default function App() {
       .reduce((s, e) => s + (Number(e.pages) || 0), 0);
   }, [entries]);
 
-  // الكتب النشطة فقط (استثناء الكتب التي أُكْمِلَت بالفعل)
+  const finishedTitles = useMemo(() => completedBooksList.map(b => b.book_title), [completedBooksList]);
+
   const activeBooks = useMemo(() => {
     const allBooks = [...new Set(entries.map((e) => e.book.trim()).filter(Boolean))];
-    return allBooks.filter((book) => !finishedBooks.includes(book));
-  }, [entries, finishedBooks]);
+    return allBooks.filter((book) => !finishedTitles.includes(book));
+  }, [entries, finishedTitles]);
 
   const bookCount = useMemo(() => activeBooks.length, [activeBooks]);
+
+  // التحقق هل الكتاب الحالي المحدد هو كتاب نادي
+  const selectedIsClubBook = useMemo(() => {
+    if (isNewBook) return isClubBook;
+    if (!selectedBook) return false;
+    const match = entries.find(e => e.book.trim() === selectedBook.trim());
+    return match ? Boolean(match.isClubBook) : false;
+  }, [isNewBook, isClubBook, selectedBook, entries]);
+
+  const currentBookProgress = useMemo(() => {
+    if (!selectedBook || isNewBook) return null;
+    const bookEntries = entries.filter(e => e.book.trim() === selectedBook.trim());
+    const totalRead = bookEntries.reduce((sum, e) => sum + (Number(e.pages) || 0), 0);
+    const targetTotal = bookEntries[0]?.totalPages || 0;
+    const percentage = targetTotal > 0 ? Math.min(100, Math.round((totalRead / targetTotal) * 100)) : 0;
+    
+    return { totalRead, targetTotal, percentage };
+  }, [selectedBook, entries, isNewBook]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -167,7 +183,6 @@ export default function App() {
     return Object.entries(map);
   }, [entries]);
 
-  // تلقائي تفعيل الكتاب الأول المتوفر إن وجد
   useEffect(() => {
     if (activeBooks.length > 0 && !selectedBook && !isNewBook) {
       setSelectedBook(activeBooks[0]);
@@ -176,7 +191,6 @@ export default function App() {
     }
   }, [activeBooks, selectedBook, isNewBook]);
 
-  // دمج ميزة Telegram Main Button
   useEffect(() => {
     const mainBtn = window.Telegram?.WebApp?.MainButton;
     if (!mainBtn) return;
@@ -201,7 +215,6 @@ export default function App() {
     }
   }, [tab, hasLoggedToday, selectedBook, pages, minutes, note]);
 
-  // تسجيل القراءة اليومية
   async function submitToday(ev) {
     ev.preventDefault();
     setError("");
@@ -213,10 +226,31 @@ export default function App() {
       return;
     }
 
+    // 1. تحقق من عدد صفحات الكتاب الكلي عند إدخال كتاب جديد للنادي
+    if (isNewBook && isClubBook) {
+      if (!totalPages || Number(totalPages) <= 0) {
+        triggerHaptic("error");
+        setError("إدخال إجمالي صفحات الكتاب الكلي إجباري لكتب النادي الجديدة!");
+        return;
+      }
+    }
+
+    // 2. إلزامية أدخال عدد صفحات اليوم لقراءات النادي (سواء كتاب جديد أو سابق)
+    if (selectedIsClubBook) {
+      if (!pages || Number(pages) <= 0) {
+        triggerHaptic("error");
+        setError("عدد صفحات القراءة اليومية إجباري لقراءات النادي!");
+        return;
+      }
+    }
+
     const entry = {
       id: `${todayKey()}-${Date.now()}`,
       date: todayKey(),
       book: targetBook,
+      author: author.trim(),
+      isClubBook: isNewBook ? isClubBook : selectedIsClubBook,
+      totalPages: totalPages ? Number(totalPages) : 0,
       pages: pages ? Number(pages) : 0,
       minutes: minutes ? Number(minutes) : 0,
       note: note.trim(),
@@ -229,37 +263,42 @@ export default function App() {
     setPages("");
     setMinutes("");
     setNote("");
-    if (isNewBook) setIsNewBook(false);
+    if (isNewBook) {
+      setIsNewBook(false);
+      setAuthor("");
+      setTotalPages("");
+      setIsClubBook(true);
+    }
 
     triggerHaptic("success");
     await saveTodayEntry(userId, entry);
   }
 
-  // إنهاء كتاب بدون مسح سجلاته التاريخية
   async function handleFinishBook() {
     const targetBook = selectedBook.trim();
     if (!targetBook) {
       triggerHaptic("warning");
-      setFinishedMsg("اختر الكتاب الذي أكملته أولاً");
+      setFinishedMsg("اختر الكتاب الذي تريد إتمامه أولاً");
       setTimeout(() => setFinishedMsg(""), 2500);
       return;
     }
 
     triggerHaptic("medium");
-    const ok = await finishBook(userId, targetBook);
-    if (ok) {
+    const res = await finishBook(userId, targetBook);
+    if (res.success) {
       setBooksFinished((prev) => prev + 1);
-      setFinishedBooks((prev) => [...prev, targetBook]); // إضافة اسم الكتاب للكتب المتمّة
+      setCompletedBooksList((prev) => [{ book_title: targetBook, author: author || "", created_at: new Date().toISOString() }, ...prev]);
       triggerHaptic("success");
-      setFinishedMsg(`🎉 تهانينا! أكملت "${targetBook}" بنجاح! +50 XP`);
-      
+      setFinishedMsg(res.message);
       setSelectedBook("");
-      
       setTimeout(() => setFinishedMsg(""), 4000);
+    } else {
+      triggerHaptic("error");
+      setFinishedMsg(`⚠️ ${res.message}`);
+      setTimeout(() => setFinishedMsg(""), 4500);
     }
   }
 
-  /// التقاط ومشاركة بطاقة الإحصائيات
   async function shareStats() {
     if (!statsCardRef.current) return;
     triggerHaptic("light");
@@ -303,9 +342,7 @@ https://t.me/mtdreads_bot`;
             setSharing(false);
             return;
           }
-        } catch (e) {
-          // إلغاء مشاركة النظام
-        }
+        } catch (e) {}
       }
 
       setShareImage(dataUrl);
@@ -376,7 +413,6 @@ https://t.me/mtdreads_bot`;
       `}</style>
 
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 16px 30px" }}>
-        {/* الهيدر العلوي */}
         <div
           className="text-center"
           style={{
@@ -410,7 +446,6 @@ https://t.me/mtdreads_bot`;
           )}
         </div>
 
-        {/* كروت الإحصائيات السريعة الثلاثية */}
         <div className="card fade-in" style={{ borderRadius: 14, padding: "16px", display: "flex", justifyContent: "space-around", marginBottom: 18 }}>
           <div className="text-center" style={{ flex: 1 }}>
             <Star className="star-pulse" size={22} style={{ color: orange, margin: "0 auto 4px" }} fill={orange} />
@@ -431,11 +466,12 @@ https://t.me/mtdreads_bot`;
           </div>
         </div>
 
-        {/* نظام التبويبات */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 18, background: "#FFFFFF", padding: 4, borderRadius: 12, border: "1px solid #E7DFCF" }}>
+        {/* التبويبات المحدثة الشاملة للأرشيف */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "#FFFFFF", padding: 4, borderRadius: 12, border: "1px solid #E7DFCF" }}>
           {[
             ["today", "اليوم"],
             ["log", "السجل الأدبي"],
+            ["archive", "الأرشيف 📚"],
             ["stats", "الإحصائيات"],
             ["leaderboard", "المتصدرين"],
           ].map(([k, label]) => (
@@ -444,7 +480,7 @@ https://t.me/mtdreads_bot`;
               onClick={() => { triggerHaptic("light"); setTab(k); }}
               className="tab-btn"
               style={{
-                flex: 1, padding: "10px 0", borderRadius: 9, fontSize: 13, fontWeight: 700,
+                flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
                 border: "none", cursor: "pointer",
                 background: tab === k ? orange : "transparent",
                 color: tab === k ? "#FFFFFF" : navy,
@@ -477,10 +513,20 @@ https://t.me/mtdreads_bot`;
                   <label style={{ color: navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                     <Bookmark size={14} style={{ color: orange }} /> اسم الكتاب المراد تسجيله
                   </label>
+
+                  {/* إظهار الخيار دائماً لو توفرت كتب سابقة */}
                   {activeBooks.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => { triggerHaptic("light"); setIsNewBook(!isNewBook); setSelectedBook(""); }}
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setIsNewBook(!isNewBook);
+                        if (isNewBook) {
+                          setSelectedBook(activeBooks[0] || "");
+                        } else {
+                          setSelectedBook("");
+                        }
+                      }}
                       style={{ background: "transparent", border: "none", color: orange, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                     >
                       {isNewBook ? "اختر من كتبك السابقة" : "＋ كتاب جديد"}
@@ -488,14 +534,62 @@ https://t.me/mtdreads_bot`;
                   )}
                 </div>
 
+                {/* إعدادات الكتاب الجديد تظهر فقط عند اختيار "+ كتاب جديد" */}
                 {isNewBook || activeBooks.length === 0 ? (
-                  <input
-                    value={selectedBook}
-                    onChange={(e) => setSelectedBook(e.target.value)}
-                    placeholder="مثال: رجال في الشمس"
-                    style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
-                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+                    {/* اختيار نوع الكتاب الجديد */}
+                    <div style={{ display: "flex", gap: 8, background: "#FFFBF5", padding: 4, borderRadius: 10, border: "1px solid #E7DFCF" }}>
+                      <button
+                        type="button"
+                        onClick={() => { triggerHaptic("light"); setIsClubBook(true); }}
+                        style={{
+                          flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                          background: isClubBook ? orange : "transparent",
+                          color: isClubBook ? "#FFFFFF" : navy,
+                        }}
+                      >
+                        🏛️ من قراءات النادي
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { triggerHaptic("light"); setIsClubBook(false); }}
+                        style={{
+                          flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+                          background: !isClubBook ? navy : "transparent",
+                          color: !isClubBook ? "#FFFFFF" : navy,
+                        }}
+                      >
+                        📖 قراءة حرة
+                      </button>
+                    </div>
+
+                    <input
+                      value={selectedBook}
+                      onChange={(e) => setSelectedBook(e.target.value)}
+                      placeholder="اسم الكتاب"
+                      style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                    />
+                    <input
+                      value={author}
+                      onChange={(e) => setAuthor(e.target.value)}
+                      placeholder="اسم المؤلف (اختياري)"
+                      style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                    />
+                    <div>
+                      <label style={{ color: navy, fontSize: 12, fontWeight: 700, display: "block", marginBottom: 4 }}>
+                        إجمالي صفحات الكتاب {isClubBook ? <span style={{ color: "red" }}>(إجباري لقراءات النادي *)</span> : "(اختياري للقراءة الحرة)"}
+                      </label>
+                      <input
+                        type="number" min="1" inputMode="numeric"
+                        value={totalPages}
+                        onChange={(e) => setTotalPages(e.target.value)}
+                        placeholder="مثال: 250"
+                        style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                      />
+                    </div>
+                  </div>
                 ) : (
+                  /* القائمة المنسدلة للكتب النشطة السابقة */
                   <div style={{ position: "relative" }}>
                     <select
                       value={selectedBook}
@@ -511,14 +605,30 @@ https://t.me/mtdreads_bot`;
                 )}
               </div>
 
+              {/* شريط التقدم ونسبة الإنجاز */}
+              {currentBookProgress && currentBookProgress.targetTotal > 0 && (
+                <div style={{ background: "#FFFBF5", border: "1px solid #E7DFCF", borderRadius: 10, padding: 10, marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: navy, marginBottom: 4 }}>
+                    <span>تقدمك في الكتاب: {currentBookProgress.totalRead} / {currentBookProgress.targetTotal} صفحة</span>
+                    <span style={{ color: orange }}>{currentBookProgress.percentage}%</span>
+                  </div>
+                  <div style={{ background: "#EEE6D6", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                    <div style={{ width: `${currentBookProgress.percentage}%`, background: orange, height: "100%", transition: "width 0.3s" }} />
+                  </div>
+                </div>
+              )}
+
+              {/* الإدخال اليومي المستمر */}
               <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>عدد الصفحات</label>
+                  <label style={{ color: navy, fontSize: 13, fontWeight: 700 }}>
+                    عدد صفحات اليوم {selectedIsClubBook && <span style={{ color: "red" }}>*</span>}
+                  </label>
                   <input
                     type="number" min="0" inputMode="numeric"
                     value={pages}
                     onChange={(e) => setPages(e.target.value)}
-                    placeholder="كم صفحة؟"
+                    placeholder="كم صفحة اليوم؟"
                     style={{ width: "100%", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginTop: 6 }}
                   />
                 </div>
@@ -559,21 +669,23 @@ https://t.me/mtdreads_bot`;
                 {hasLoggedToday ? "سجّل كتاباً آخر لليوم 📚" : "سجّل قراءة اليوم بالتطبيق"}
               </button>
 
-              <button
-                type="button"
-                onClick={handleFinishBook}
-                style={{
-                  width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
-                  background: "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
-                  marginTop: 10,
-                }}
-              >
-                🎉 لقد أتممت قراءة هذا الكتاب بالكامل (+50 XP)
-              </button>
+              {!isNewBook && activeBooks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleFinishBook}
+                  style={{
+                    width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
+                    background: "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
+                    marginTop: 10,
+                  }}
+                >
+                  🎉 أتممت قراءة هذا الكتاب بالكامل (+50 XP)
+                </button>
+              )}
             </form>
 
             {finishedMsg && (
-              <div className="fade-in" style={{ textAlign: "center", color: orange, fontSize: 14, marginTop: 14, fontWeight: 700, background: "#FFFFFF", padding: "10px", borderRadius: 10, border: `1px dashed ${orange}` }}>
+              <div className="fade-in" style={{ textAlign: "center", color: orange, fontSize: 13, marginTop: 14, fontWeight: 700, background: "#FFFFFF", padding: "10px 12px", borderRadius: 10, border: `1px dashed ${orange}` }}>
                 {finishedMsg}
               </div>
             )}
@@ -610,9 +722,11 @@ https://t.me/mtdreads_bot`;
                 </div>
                 {items.map((e, index) => (
                   <div key={e.id} style={{ marginBottom: index !== items.length - 1 ? 12 : 0, borderBottom: index !== items.length - 1 ? "1px solid #F4EFE6" : "none", paddingBottom: index !== items.length - 1 ? 10 : 0 }}>
-                    <div style={{ color: navy, fontSize: 15, fontWeight: 700 }}>{e.book}</div>
+                    <div style={{ color: navy, fontSize: 15, fontWeight: 700 }}>
+                      {e.book} {e.author && <span style={{ fontSize: 12, color: "#8B8272", fontWeight: 500 }}>— لـ {e.author}</span>}
+                    </div>
                     <div style={{ color: "#8B8272", fontSize: 13, marginTop: 2, fontWeight: 500 }}>
-                      {e.pages ? `📑 سَجّلَ {${e.pages}} صفحة` : ""} {e.minutes ? ` · ⏱️ استغرق {${e.minutes}} دقيقة` : ""}
+                      {e.pages ? `📑 سَجّلَ ${e.pages} صفحة` : ""} {e.minutes ? ` · ⏱️ استغرق ${e.minutes} دقيقة` : ""}
                     </div>
                     {e.note && (
                       <div className="amiri" style={{ color: "#4A5568", fontSize: 14, marginTop: 6, paddingRight: 8, borderRight: "2px solid #EEE6D6", fontStyle: "italic" }}>
@@ -626,7 +740,33 @@ https://t.me/mtdreads_bot`;
           </div>
         )}
 
-        {/* --- 3. تبويب الإحصائيات والأوسمة --- */}
+        {/* --- 3. تبويب أرشيف الكتب المكتملة --- */}
+        {tab === "archive" && (
+          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {completedBooksList.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#A99B7E", fontSize: 14, padding: "40px 0" }}>
+                🏆 لم تضف أي كتاب للأرشيف بعد، اقطع رحلة قراءتك وأتمم كتابك الأول!
+              </div>
+            ) : (
+              completedBooksList.map((item, idx) => (
+                <div key={idx} className="card" style={{ borderRadius: 14, padding: 16, borderRight: `4px solid ${orange}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: orange, fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
+                    <Check size={16} /> كتاب مكتمل (+50 XP)
+                  </div>
+                  <div style={{ color: navy, fontSize: 16, fontWeight: 800 }}>{item.book_title}</div>
+                  {item.author && <div style={{ color: "#8B8272", fontSize: 13, marginTop: 2 }}>المؤلف: {item.author}</div>}
+                  {item.created_at && (
+                    <div style={{ color: "#A99B7E", fontSize: 11, marginTop: 8 }}>
+                      تاريخ الإتمام: {new Date(item.created_at).toISOString().slice(0, 10)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* --- 4. تبويب الإحصائيات والأوسمة --- */}
         {tab === "stats" && (
           <>
             <div ref={statsCardRef} style={{ background: cream, padding: "8px 4px 4px" }}>
@@ -703,7 +843,7 @@ https://t.me/mtdreads_bot`;
           </>
         )}
 
-        {/* --- 4. تبويب المتصدرين --- */}
+        {/* --- 5. تبويب المتصدرين --- */}
         {tab === "leaderboard" && (
           <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {loadingLeaderboard ? (
@@ -749,7 +889,6 @@ https://t.me/mtdreads_bot`;
         )}
       </div>
 
-      {/* النافذة المنبثقة لمعاينة الصورة والمشاركة */}
       {shareImage && (
         <div
           onClick={() => setShareImage(null)}
