@@ -79,7 +79,7 @@ export default function App() {
   const statsCardRef = useRef(null);
   const [shareImage, setShareImage] = useState(null);
   const [sharing, setSharing] = useState(false);
-
+const [finishingBook, setFinishingBook] = useState(false);
   // حقول الإدخال والتحكم المحدثة
   const [selectedBook, setSelectedBook] = useState(""); 
   const [author, setAuthor] = useState("");
@@ -275,29 +275,27 @@ export default function App() {
   }
 
   async function handleFinishBook() {
-    const targetBook = selectedBook.trim();
-    if (!targetBook) {
-      triggerHaptic("warning");
-      setFinishedMsg("اختر الكتاب الذي تريد إتمامه أولاً");
-      setTimeout(() => setFinishedMsg(""), 2500);
-      return;
-    }
+  const targetBook = selectedBook.trim();
+  if (!targetBook || finishingBook) return;
 
-    triggerHaptic("medium");
-    const res = await finishBook(userId, targetBook);
-    if (res.success) {
-      setBooksFinished((prev) => prev + 1);
-      setCompletedBooksList((prev) => [{ book_title: targetBook, author: author || "", created_at: new Date().toISOString() }, ...prev]);
-      triggerHaptic("success");
-      setFinishedMsg(res.message);
-      setSelectedBook("");
-      setTimeout(() => setFinishedMsg(""), 4000);
-    } else {
-      triggerHaptic("error");
-      setFinishedMsg(`⚠️ ${res.message}`);
-      setTimeout(() => setFinishedMsg(""), 4500);
-    }
+  setFinishingBook(true); // قفل الزر فوراً
+  triggerHaptic("medium");
+  
+  const res = await finishBook(userId, targetBook);
+  if (res.success) {
+    setBooksFinished((prev) => prev + 1);
+    setCompletedBooksList((prev) => [{ book_title: targetBook, author: author || "", created_at: new Date().toISOString() }, ...prev]);
+    triggerHaptic("success");
+    setFinishedMsg(res.message);
+    setSelectedBook("");
+    setTimeout(() => setFinishedMsg(""), 4000);
+  } else {
+    triggerHaptic("error");
+    setFinishedMsg(`⚠️ ${res.message}`);
+    setTimeout(() => setFinishedMsg(""), 4500);
   }
+  setFinishingBook(false); // إعادة فتح الزر
+}
 
   async function shareStats() {
     if (!statsCardRef.current) return;
@@ -671,16 +669,17 @@ https://t.me/mtdreads_bot`;
 
               {!isNewBook && activeBooks.length > 0 && (
                 <button
-                  type="button"
-                  onClick={handleFinishBook}
-                  style={{
-                    width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
-                    background: "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
-                    marginTop: 10,
-                  }}
-                >
-                  🎉 أتممت قراءة هذا الكتاب بالكامل (+50 XP)
-                </button>
+  type="button"
+  disabled={finishingBook}
+  onClick={handleFinishBook}
+  style={{
+    width: "100%", padding: "11px 0", borderRadius: 10, border: `1.5px solid ${orange}`,
+    background: finishingBook ? "#E7DFCF" : "transparent", color: orange, fontWeight: 700, fontSize: 14, cursor: "pointer",
+    marginTop: 10, opacity: finishingBook ? 0.6 : 1
+  }}
+>
+  {finishingBook ? "⏳ جارِ الحفظ..." : "🎉 أتممت قراءة هذا الكتاب بالكامل (+50 XP)"}
+</button>
               )}
             </form>
 
