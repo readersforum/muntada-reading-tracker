@@ -131,6 +131,7 @@ export async function finishBook(telegramId, bookTitle) {
 
   // تسجيل الإتمام في قاعدة البيانات
   // تسجيل الإتمام في قاعدة البيانات
+  // تسجيل الإتمام في قاعدة البيانات
   const { error } = await supabase
     .from("book_completions")
     .insert({ 
@@ -141,15 +142,14 @@ export async function finishBook(telegramId, bookTitle) {
     });
 
   if (error) {
-    // التقاط خطأ تكرار إضافة الكتاب في الأرشيف وإرجاع رسالة عربية واضحة
-    if (error.code === '23505' || error.message.includes('unique_user_book_completion')) {
+    // 💡 التعديل هنا: فحص كود الخطأ أو نص القيد الفريد وإرجاع رسالة عربية بدلاً من نص Supabase
+    if (error.code === '23505' || (error.message && error.message.includes('unique_user_book_completion'))) {
       return { 
         success: false, 
         message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
       };
     }
 
-    debugAlert("خطأ بتسجيل إنهاء الكتاب: " + error.message);
     return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب" };
   }
 
