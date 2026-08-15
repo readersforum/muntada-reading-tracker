@@ -1,36 +1,32 @@
+
 import { supabase } from "./supabaseClient.js";
 
+// ✅ أخفِف الـ debugAlert — بس Console
 function debugAlert(message) {
-  console.error(message);
-  let box = document.getElementById("debug-error-box");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "debug-error-box";
-    box.style.cssText =
-      "position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#C0392B;color:#fff;font-size:12px;padding:10px;direction:rtl;max-height:40vh;overflow:auto;white-space:pre-wrap;";
-    document.body.appendChild(box);
-  }
-  const line = document.createElement("div");
-  line.style.borderTop = "1px solid rgba(255,255,255,0.3)";
-  line.style.paddingTop = "4px";
-  line.style.marginTop = "4px";
-  line.textContent = message;
-  box.appendChild(line);
+  console.error("[DEBUG]", message);
+}
+
+// ✅ فحص guest
+function isGuest(id) {
+  return !id || id === "guest";
 }
 
 // يتأكد إن المستخدم موجود بجدول users، ويرجع صفه (يسويه إذا مو موجود)
 async function ensureUser(telegramId, name) {
+  if (isGuest(telegramId)) return null;
+  
+  const numId = Number(telegramId);
   const { data: existing } = await supabase
     .from("users")
     .select("*")
-    .eq("telegram_id", telegramId)
+    .eq("telegram_id", numId)
     .maybeSingle();
 
   if (existing) return existing;
 
   const { data, error } = await supabase
     .from("users")
-    .insert({ telegram_id: telegramId, name })
+    .insert({ telegram_id: numId, name })
     .select()
     .single();
 
@@ -43,27 +39,43 @@ async function ensureUser(telegramId, name) {
 
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, telegramName) {
-  try {
-    const rawId = String(telegramId);
-    const numId = Number(telegramId) || 0;
+  if (isGuest(telegramId)) {
+    return { 
+      name: telegramName || "", 
+      entries: [], 
+      optIn: false, 
+      booksFinished: 0, 
+      completedBooksList: [] 
+    };
+  }
 
-    // 1. جلب بيانات المستخدم
+  try {
+    const numId = Number(telegramId);
+
+    // 1. جلب المستخدم من جدول users
     let { data: user } = await supabase
       .from("users")
       .select("*")
-      .or(`telegram_id.eq.${numId},telegram_id.eq.${rawId}`)
+      .eq("telegram_id", numId)
       .maybeSingle();
 
-    const uuid = user?.id;
-
-    // 2. جلب سجلات القراءة (reading_logs) بالـ UUID أو بالـ telegram_id
-    let logsQuery = supabase.from("reading_logs").select("*");
-    if (uuid) {
-      logsQuery = logsQuery.or(`user_id.eq.${uuid},user_id.eq.${rawId}`);
-    } else {
-      logsQuery = logsQuery.eq("user_id", rawId);
+    if (!user) {
+      return { 
+        name: telegramName || "", 
+        entries: [], 
+        optIn: false, 
+        booksFinished: 0, 
+        completedBooksList: [] 
+      };
     }
-    const { data: logsData } = await logsQuery;
+
+    const uuid = user.id; // الـ UUID الخاص بالمستخدم
+
+    // 2. جلب سجلات القراءة من جدول reading_logs
+    const { data: logsData } = await supabase
+      .from("reading_logs")
+      .select("*")
+      .eq("user_id", uuid);
 
     const formattedEntries = (logsData || []).map((e) => ({
       id: e.id,
@@ -76,25 +88,18 @@ export async function loadUserData(telegramId, telegramName) {
       totalPages: Number(e.total_pages || e.totalPages || 0)
     }));
 
-    // 3. 💡 جلب الأرشيف (book_completions) بالـ UUID وبالـ telegram_id معاً
-    let compQuery = supabase.from("book_completions").select("*");
-    if (uuid) {
-      compQuery = compQuery.or(`user_id.eq.${uuid},user_id.eq.${rawId}`);
-    } else {
-      compQuery = compQuery.eq("user_id", rawId);
-    }
-    const { data: completionsData } = await compQuery.order("created_at", { ascending: false });
+    // 3. جلب الأرشيف من جدول book_completions
+    const { data: completionsData } = await supabase
+      .from("book_completions")
+      .select("*")
+      .eq("user_id", uuid)
+      .order("created_at", { ascending: false });
 
-    const completedList = (completionsData || []).map(c => ({
-      id: c.id,
-      book_title: c.book_title || c.book || "",
-      author: c.author || "",
-      created_at: c.created_at
-    }));
+    const completedList = completionsData || [];
 
     return {
-      name: user?.name || telegramName || "",
-      optIn: Boolean(user?.opt_in),
+      name: user.name || telegramName || "",
+      optIn: Boolean(user.opt_in),
       entries: formattedEntries,
       booksFinished: completedList.length,
       completedBooksList: completedList
@@ -110,79 +115,76 @@ export async function loadUserData(telegramId, telegramName) {
     };
   }
 }
+
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
-  try {
-    const rawId = String(telegramId);
-    const numId = Number(telegramId) || 0;
-    const cleanTitle = (bookTitle || "").trim();
+  if (isGuest(telegramId)) {
+    return { success: false, message: "يجب فتح التطبيق من تليجرام لاستخدام هذه الميزة" };
+  }
 
-    // 1. جلب المستخدم بمرونة (يدعم String و Number)
-    const { data: user, error: userErr } = await supabase
-      .from("users")
-      .select("id")
-      .or(`telegram_id.eq.${numId},telegram_id.eq.${rawId}`)
-      .maybeSingle();
+  const numId = Number(telegramId);
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("telegram_id", numId)
+    .single();
 
-    if (userErr || !user) {
-      return { success: false, message: "لم يتم العثور على المستخدم المسجل!" };
-    }
+  if (!user) {
+    return { success: false, message: "لم يتم العثور على المستخدم" };
+  }
 
-    // 2. جلب جميع قراءات هذا الكتاب للمستخدم
-    const { data: logs, error: logsErr } = await supabase
-      .from("reading_logs")
-      .select("*")
-      .eq("user_id", user.id);
+  // جلب جميع قراءات هذا الكتاب للمستخدم
+  const { data: logs } = await supabase
+    .from("reading_logs")
+    .select("pages, total_pages, entry_date, author")
+    .eq("user_id", user.id)
+    .eq("book", bookTitle);
 
-    // فلترة السجلات الخاصة بهذا الكتاب تحديداً
-    const bookLogs = (logs || []).filter(
-      (l) => (l.book || l.book_title || "").trim().toLowerCase() === cleanTitle.toLowerCase()
-    );
+  if (!logs || logs.length === 0) {
+    return { success: false, message: "لا تملك سجلات قراءة لهذا الكتاب!" };
+  }
 
-    if (bookLogs.length === 0) {
-      return { success: false, message: "لا تملك سجلات قراءة مسجلة لهذا الكتاب!" };
-    }
+  // 1. حساب إجمالي الصفحات المسجلة للكتاب
+  const totalReadPages = logs.reduce((sum, log) => sum + (log.pages || 0), 0);
+  const targetTotalPages = logs[0]?.total_pages || 0;
+  const author = logs[0]?.author || "";
 
-    // 3. حساب إجمالي الصفحات المسجلة
-    const totalReadPages = bookLogs.reduce((sum, log) => sum + Number(log.pages || log.page_count || 0), 0);
-    const targetTotalPages = Number(bookLogs[0]?.total_pages || bookLogs[0]?.totalPages || 0);
-    const author = bookLogs[0]?.author || "";
+  // 2. التحقق من شرط الصفحات الكلية
+  if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
+    const remaining = targetTotalPages - totalReadPages;
+    return { 
+      success: false, 
+      message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
+    };
+  }
 
-    // 4. التحقق من شرط اكتمال الصفحات الكلية
-    if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
-      const remaining = targetTotalPages - totalReadPages;
+  // 3. التحقق من التثبيت بأن القراءة تمت على مدار أيام وليس جلسة واحدة
+  const uniqueDays = new Set(logs.map(l => l.entry_date)).size;
+  if (uniqueDays < 1) {
+    return { success: false, message: "يجب تسجيل القراءة على مدار أيام أولاً." };
+  }
+
+  // تسجيل الإتمام في قاعدة البيانات
+  const { error } = await supabase
+    .from("book_completions")
+    .insert({ 
+      user_id: user.id, 
+      book_title: bookTitle,
+      author: author,
+      total_pages: targetTotalPages
+    });
+
+  if (error) {
+    if (error.code === '23505' || (error.message && error.message.includes('unique_user_book_completion'))) {
       return { 
         success: false, 
-        message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
+        message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
       };
     }
-
-    // 5. تسجيل الإتمام في جدول book_completions
-    const { error: insertErr } = await supabase
-      .from("book_completions")
-      .insert([{ 
-        user_id: user.id, 
-        book_title: cleanTitle,
-        author: author,
-        total_pages: targetTotalPages
-      }]);
-
-    if (insertErr) {
-      if (insertErr.code === '23505' || (insertErr.message && insertErr.message.includes('unique_user_book_completion'))) {
-        return { 
-          success: false, 
-          message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
-        };
-      }
-      console.error("خطأ إدراج الأرشيف:", insertErr);
-      return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب في قاعدة البيانات" };
-    }
-
-    return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
-  } catch (err) {
-    console.error("finishBook Exception:", err);
-    return { success: false, message: "تعذر الاتصال بقاعدة البيانات" };
+    return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب" };
   }
+
+  return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
 }
 
 // عتبات المستويات والـ XP
@@ -234,10 +236,13 @@ export function computeXP(entries, booksFinished, longestStreak) {
 }
 
 export async function saveProfile(telegramId, { name, optIn }) {
+  if (isGuest(telegramId)) return true;
+  
+  const numId = Number(telegramId);
   const { error } = await supabase
     .from("users")
     .update({ name, opt_in: optIn })
-    .eq("telegram_id", telegramId);
+    .eq("telegram_id", numId);
 
   if (error) {
     debugAlert("خطأ بحفظ الملف الشخصي: " + error.message);
@@ -308,10 +313,13 @@ export async function getLeaderboard() {
 
 // يحفظ قراءة اليوم مع إضافة اسم المؤلف وعدد الصفحات الإجمالي
 export async function saveTodayEntry(telegramId, entry) {
+  if (isGuest(telegramId)) return true;
+
+  const numId = Number(telegramId);
   const { data: user } = await supabase
     .from("users")
     .select("id")
-    .eq("telegram_id", telegramId)
+    .eq("telegram_id", numId)
     .single();
 
   if (!user) {
@@ -336,3 +344,4 @@ export async function saveTodayEntry(telegramId, entry) {
   }
   return true;
 }
+
