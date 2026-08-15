@@ -39,7 +39,10 @@ async function ensureUser(telegramId, name) {
 
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, telegramName) {
+  console.log("[loadUserData] telegramId:", telegramId, "isGuest:", isGuest(telegramId));
+  
   if (isGuest(telegramId)) {
+    console.log("[loadUserData] Guest mode — returning empty data");
     return { 
       name: telegramName || "", 
       entries: [], 
@@ -51,15 +54,19 @@ export async function loadUserData(telegramId, telegramName) {
 
   try {
     const numId = Number(telegramId);
+    console.log("[loadUserData] Looking for user with telegram_id:", numId);
 
     // 1. جلب المستخدم من جدول users
-    let { data: user } = await supabase
+    let { data: user, error: userErr } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", numId)
       .maybeSingle();
 
+    console.log("[loadUserData] User found:", user, "Error:", userErr);
+
     if (!user) {
+      console.log("[loadUserData] No user found — returning empty data");
       return { 
         name: telegramName || "", 
         entries: [], 
@@ -70,12 +77,15 @@ export async function loadUserData(telegramId, telegramName) {
     }
 
     const uuid = user.id; // الـ UUID الخاص بالمستخدم
+    console.log("[loadUserData] User UUID:", uuid);
 
     // 2. جلب سجلات القراءة من جدول reading_logs
-    const { data: logsData } = await supabase
+    const { data: logsData, error: logsErr } = await supabase
       .from("reading_logs")
       .select("*")
       .eq("user_id", uuid);
+
+    console.log("[loadUserData] Reading logs:", logsData?.length || 0, "Error:", logsErr);
 
     const formattedEntries = (logsData || []).map((e) => ({
       id: e.id,
@@ -89,23 +99,29 @@ export async function loadUserData(telegramId, telegramName) {
     }));
 
     // 3. جلب الأرشيف من جدول book_completions
-    const { data: completionsData } = await supabase
+    const { data: completionsData, error: compErr } = await supabase
       .from("book_completions")
       .select("*")
       .eq("user_id", uuid)
       .order("created_at", { ascending: false });
 
+    console.log("[loadUserData] Book completions:", completionsData, "Error:", compErr);
+    console.log("[loadUserData] Completions count:", completionsData?.length || 0);
+
     const completedList = completionsData || [];
 
-    return {
+    const result = {
       name: user.name || telegramName || "",
       optIn: Boolean(user.opt_in),
       entries: formattedEntries,
       booksFinished: completedList.length,
       completedBooksList: completedList
     };
+    
+    console.log("[loadUserData] Returning:", result);
+    return result;
   } catch (err) {
-    console.error("خطأ loadUserData:", err);
+    console.error("[loadUserData] CATCH ERROR:", err);
     return { 
       name: telegramName || "", 
       entries: [], 
@@ -118,27 +134,33 @@ export async function loadUserData(telegramId, telegramName) {
 
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
+  console.log("[finishBook] Called with:", telegramId, bookTitle);
+  
   if (isGuest(telegramId)) {
     return { success: false, message: "يجب فتح التطبيق من تليجرام لاستخدام هذه الميزة" };
   }
 
   const numId = Number(telegramId);
-  const { data: user } = await supabase
+  const { data: user, error: userErr } = await supabase
     .from("users")
     .select("id")
     .eq("telegram_id", numId)
     .single();
+
+  console.log("[finishBook] User:", user, "Error:", userErr);
 
   if (!user) {
     return { success: false, message: "لم يتم العثور على المستخدم" };
   }
 
   // جلب جميع قراءات هذا الكتاب للمستخدم
-  const { data: logs } = await supabase
+  const { data: logs, error: logsErr } = await supabase
     .from("reading_logs")
     .select("pages, total_pages, entry_date, author")
     .eq("user_id", user.id)
     .eq("book", bookTitle);
+
+  console.log("[finishBook] Logs for book:", logs, "Error:", logsErr);
 
   if (!logs || logs.length === 0) {
     return { success: false, message: "لا تملك سجلات قراءة لهذا الكتاب!" };
@@ -148,6 +170,8 @@ export async function finishBook(telegramId, bookTitle) {
   const totalReadPages = logs.reduce((sum, log) => sum + (log.pages || 0), 0);
   const targetTotalPages = logs[0]?.total_pages || 0;
   const author = logs[0]?.author || "";
+
+  console.log("[finishBook] totalReadPages:", totalReadPages, "target:", targetTotalPages);
 
   // 2. التحقق من شرط الصفحات الكلية
   if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
@@ -160,19 +184,26 @@ export async function finishBook(telegramId, bookTitle) {
 
   // 3. التحقق من التثبيت بأن القراءة تمت على مدار أيام وليس جلسة واحدة
   const uniqueDays = new Set(logs.map(l => l.entry_date)).size;
+  console.log("[finishBook] uniqueDays:", uniqueDays);
+  
   if (uniqueDays < 1) {
     return { success: false, message: "يجب تسجيل القراءة على مدار أيام أولاً." };
   }
 
   // تسجيل الإتمام في قاعدة البيانات
+  const insertData = { 
+    user_id: user.id, 
+    book_title: bookTitle,
+    author: author,
+    total_pages: targetTotalPages
+  };
+  console.log("[finishBook] Inserting:", insertData);
+  
   const { error } = await supabase
     .from("book_completions")
-    .insert({ 
-      user_id: user.id, 
-      book_title: bookTitle,
-      author: author,
-      total_pages: targetTotalPages
-    });
+    .insert(insertData);
+
+  console.log("[finishBook] Insert error:", error);
 
   if (error) {
     if (error.code === '23505' || (error.message && error.message.includes('unique_user_book_completion'))) {
