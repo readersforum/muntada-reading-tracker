@@ -42,47 +42,45 @@ async function ensureUser(telegramId, name) {
 }
 
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
-export async function loadUserData(telegramId, fallbackName) {
-  const user = await ensureUser(telegramId, fallbackName);
-  if (!user) return { name: fallbackName || "", optIn: false, entries: [], booksFinished: 0, completedBooksList: [] };
+export async function loadUserData(telegramId, telegramName) {
+  try {
+    // 1. جلب بيانات المستخدم
+    let { data: user, error: userErr } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", String(telegramId))
+      .single();
 
-  const { data: logs, error } = await supabase
-    .from("reading_logs")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("entry_date", { ascending: true });
+    if (userErr || !user) {
+      return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
+    }
 
-  if (error) {
-    debugAlert("خطأ بجلب السجلات: " + error.message);
+    // 2. جلب سجلات القراءة
+    const { data: entriesData } = await supabase
+      .from("reading_entries")
+      .select("*")
+      .eq("user_id", user.id);
+
+    // 3. 💡 جلب قائمة الكتب المكتملة من الأرشيف
+    const { data: completionsData } = await supabase
+      .from("book_completions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    const completedList = completionsData || [];
+
+    return {
+      name: user.name || telegramName || "",
+      optIn: Boolean(user.opt_in),
+      entries: entriesData || [],
+      booksFinished: completedList.length,
+      completedBooksList: completedList // 👈 التأكد من إرجاع القائمة هنا
+    };
+  } catch (err) {
+    console.error("خطأ loadUserData:", err);
+    return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
-
-  const entries = (logs || []).map((l) => ({
-    id: l.id,
-    date: l.entry_date,
-    book: l.book,
-    author: l.author || "",
-    totalPages: l.total_pages || 0,
-    pages: l.pages,
-    minutes: l.minutes,
-    note: l.note || "",
-  }));
-
-  // جلب أرشيف الكتب المنتهية مع تفاصيلها
-  const { data: completions } = await supabase
-    .from("book_completions")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-
-  const completedBooksList = completions || [];
-
-  return {
-    name: user.name || fallbackName || "",
-    optIn: !!user.opt_in,
-    entries,
-    booksFinished: completedBooksList.length,
-    completedBooksList,
-  };
 }
 
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)

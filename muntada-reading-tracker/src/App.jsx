@@ -159,6 +159,16 @@ export default function App() {
   }, [userId]);
 
   useEffect(() => {
+  if (toast) {
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 3500); // تختفي تلقائياً بعد 3.5 ثوانٍ
+
+    return () => clearTimeout(timer);
+  }
+}, [toast]);
+
+  useEffect(() => {
   if (tab === "leaderboard") {
     setLoadingLeaderboard(true);
     safeGetLeaderboard().then((data) => {
@@ -189,11 +199,15 @@ useEffect(() => {
     const m = todayKey().slice(0, 7);
     return entries.filter((e) => e.date.startsWith(m)).reduce((s, e) => s + (Number(e.pages) || 0), 0);
   }, [entries]);
-  const finishedTitles = useMemo(() => completedBooksList.map(b => b.book_title), [completedBooksList]);
-  const activeBooks = useMemo(() => {
-    const allBooks = [...new Set(entries.map((e) => e.book.trim()).filter(Boolean))];
-    return allBooks.filter((book) => !finishedTitles.includes(book));
-  }, [entries, finishedTitles]);
+  const finishedTitles = useMemo(() => {
+  return completedBooksList.map((b) => (b.book_title || "").trim().toLowerCase());
+}, [completedBooksList]);
+
+const activeBooks = useMemo(() => {
+  const allBooks = [...new Set(entries.map((e) => (e.book || "").trim()).filter(Boolean))];
+  // استبعاد أي كتاب موجود اسمه في قائمة المكتملات
+  return allBooks.filter((book) => !finishedTitles.includes(book.toLowerCase()));
+}, [entries, finishedTitles]);
   const bookCount = useMemo(() => activeBooks.length, [activeBooks]);
 
   const selectedIsClubBook = useMemo(() => {
