@@ -43,66 +43,67 @@ async function ensureUser(telegramId, name) {
 
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, telegramName) {
+  console.log("🔍 بدأ جلب البيانات للمستخدم:", { telegramId, telegramName });
+
   try {
     const rawId = String(telegramId);
-    const numId = Number(telegramId) || 0;
 
-    // 1. جلب بيانات المستخدم بمرونة وبدون أخطاء single()
+    // 1. جلب المستخدم من جدول users
     let { data: users, error: userErr } = await supabase
       .from("users")
       .select("*")
-      .or(`telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+      .eq("telegram_id", rawId);
+
+    if (userErr) {
+      console.error("❌ خطأ في جدول users:", userErr);
+    }
 
     let user = users && users.length > 0 ? users[0] : null;
+    console.log("👤 بيانات المستخدم من القاعدة:", user);
 
-    // 2. إذا لم يكن المستخدم مسجلاً بعد، نقوم بإنشائه تلقائياً
-    if (!user && rawId !== "guest") {
-      const { data: newUser } = await supabase
-        .from("users")
-        .insert([{ 
-          telegram_id: isNaN(Number(rawId)) ? rawId : Number(rawId), 
-          name: telegramName || "قارئ",
-          opt_in: true 
-        }])
-        .select()
-        .maybeSingle();
+    // 2. جلب جميع السجلات لاختبار الحقول
+    const { data: entriesData, error: entErr } = await supabase
+      .from("reading_entries")
+      .select("*");
 
-      if (newUser) user = newUser;
+    if (entErr) {
+      console.error("❌ خطأ في جدول reading_entries:", entErr);
     }
 
-    const internalId = user?.id;
+    console.log("📚 كل السجلات الموجودة في reading_entries:", entriesData);
 
-    // 3. جلب سجلات القراءة بجميع الاحتمالات (user_id أو telegram_id)
-    let entriesQuery = supabase.from("reading_entries").select("*");
-    if (internalId) {
-      entriesQuery = entriesQuery.or(`user_id.eq.${internalId},user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
-    } else {
-      entriesQuery = entriesQuery.or(`user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+    // تصفية السجلات التابعة لهذا المستخدم
+    const userEntries = (entriesData || []).filter(
+      (e) => String(e.telegram_id) === rawId || (user && e.user_id === user.id)
+    );
+
+    // 3. جلب الأرشيف (الكتب المكتملة)
+    const { data: completionsData, error: compErr } = await supabase
+      .from("book_completions")
+      .select("*");
+
+    if (compErr) {
+      console.error("❌ خطأ في جدول book_completions:", compErr);
     }
 
-    const { data: entriesData, error: entErr } = await entriesQuery;
+    const userCompletions = (completionsData || []).filter(
+      (c) => String(c.telegram_id) === rawId || (user && c.user_id === user.id)
+    );
 
-    // 4. جلب الأرشيف (الكتب المكتملة)
-    let compQuery = supabase.from("book_completions").select("*");
-    if (internalId) {
-      compQuery = compQuery.or(`user_id.eq.${internalId},user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
-    } else {
-      compQuery = compQuery.or(`user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
-    }
-
-    const { data: completionsData } = await compQuery.order("created_at", { ascending: false });
-
-    const completedList = completionsData || [];
+    console.log("✅ السجلات المفلترة للمستخدم:", {
+      entries: userEntries,
+      completions: userCompletions
+    });
 
     return {
       name: user?.name || telegramName || "",
-      optIn: Boolean(user?.opt_in),
-      entries: entriesData || [],
-      booksFinished: completedList.length,
-      completedBooksList: completedList
+      optIn: user?.opt_in ?? true,
+      entries: userEntries,
+      booksFinished: userCompletions.length,
+      completedBooksList: userCompletions
     };
   } catch (err) {
-    console.error("خطأ loadUserData:", err);
+    console.error("🔥 خطأ عام في loadUserData:", err);
     return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
 }
