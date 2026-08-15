@@ -61,21 +61,36 @@ export async function loadUserData(telegramId, telegramName) {
     let user = users && users.length > 0 ? users[0] : null;
     console.log("👤 بيانات المستخدم من القاعدة:", user);
 
-    // 2. جلب جميع السجلات لاختبار الحقول
-    const { data: entriesData, error: entErr } = await supabase
-      .from("reading_entries")
-      .select("*");
+   // داخل loadUserData في storage.js
 
-    if (entErr) {
-      console.error("❌ خطأ في جدول reading_entries:", entErr);
-    }
+// جلب سجلات القراءة ومطابقة الحقول تلقائياً
+const { data: entriesData, error: entErr } = await supabase
+  .from("reading_entries")
+  .select("*");
 
-    console.log("📚 كل السجلات الموجودة في reading_entries:", entriesData);
+const rawUserEntries = (entriesData || []).filter(
+  (e) => String(e.telegram_id) === rawId || (user && e.user_id === user.id)
+);
 
-    // تصفية السجلات التابعة لهذا المستخدم
-    const userEntries = (entriesData || []).filter(
-      (e) => String(e.telegram_id) === rawId || (user && e.user_id === user.id)
-    );
+// توحيد مسميات الحقول لـ App.jsx
+const formattedEntries = rawUserEntries.map((e) => ({
+  id: e.id,
+  date: e.date || (e.created_at ? e.created_at.slice(0, 10) : ""),
+  book: e.book || e.book_title || "",
+  pages: Number(e.pages || e.page_count || 0),
+  minutes: Number(e.minutes || 0),
+  note: e.note || "",
+  isClubBook: Boolean(e.is_club_book ?? e.isClubBook),
+  totalPages: Number(e.total_pages || e.totalPages || 0)
+}));
+
+return {
+  name: user?.name || telegramName || "",
+  optIn: user?.opt_in ?? true,
+  entries: formattedEntries, // 👈 استخدام المصفوفة المهيأة
+  booksFinished: userCompletions.length,
+  completedBooksList: userCompletions
+};
 
     // 3. جلب الأرشيف (الكتب المكتملة)
     const { data: completionsData, error: compErr } = await supabase
