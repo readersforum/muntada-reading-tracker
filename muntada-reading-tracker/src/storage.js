@@ -47,30 +47,23 @@ export async function loadUserData(telegramId, telegramName) {
     const rawId = String(telegramId);
     const numId = Number(telegramId) || 0;
 
-    // 1. جلب المستخدم من جدول users بواسطة telegram_id (كرقم وكنص)
-    let { data: user, error: userErr } = await supabase
+    // 1. جلب بيانات المستخدم
+    let { data: user } = await supabase
       .from("users")
       .select("*")
       .or(`telegram_id.eq.${numId},telegram_id.eq.${rawId}`)
       .maybeSingle();
 
-    if (!user) {
-      return { 
-        name: telegramName || "", 
-        entries: [], 
-        optIn: false, 
-        booksFinished: 0, 
-        completedBooksList: [] 
-      };
+    const uuid = user?.id;
+
+    // 2. جلب سجلات القراءة (reading_logs) بالـ UUID أو بالـ telegram_id
+    let logsQuery = supabase.from("reading_logs").select("*");
+    if (uuid) {
+      logsQuery = logsQuery.or(`user_id.eq.${uuid},user_id.eq.${rawId}`);
+    } else {
+      logsQuery = logsQuery.eq("user_id", rawId);
     }
-
-    const uuid = user.id; // الـ UUID الخاص بالمستخدم
-
-    // 2. جلب سجلات القراءة من جدول reading_logs
-    const { data: logsData } = await supabase
-      .from("reading_logs")
-      .select("*")
-      .eq("user_id", uuid);
+    const { data: logsData } = await logsQuery;
 
     const formattedEntries = (logsData || []).map((e) => ({
       id: e.id,
@@ -83,18 +76,25 @@ export async function loadUserData(telegramId, telegramName) {
       totalPages: Number(e.total_pages || e.totalPages || 0)
     }));
 
-    // 3. جلب الأرشيف من جدول book_completions
-    const { data: completionsData } = await supabase
-      .from("book_completions")
-      .select("*")
-      .eq("user_id", uuid)
-      .order("created_at", { ascending: false });
+    // 3. 💡 جلب الأرشيف (book_completions) بالـ UUID وبالـ telegram_id معاً
+    let compQuery = supabase.from("book_completions").select("*");
+    if (uuid) {
+      compQuery = compQuery.or(`user_id.eq.${uuid},user_id.eq.${rawId}`);
+    } else {
+      compQuery = compQuery.eq("user_id", rawId);
+    }
+    const { data: completionsData } = await compQuery.order("created_at", { ascending: false });
 
-    const completedList = completionsData || [];
+    const completedList = (completionsData || []).map(c => ({
+      id: c.id,
+      book_title: c.book_title || c.book || "",
+      author: c.author || "",
+      created_at: c.created_at
+    }));
 
     return {
-      name: user.name || telegramName || "",
-      optIn: Boolean(user.opt_in),
+      name: user?.name || telegramName || "",
+      optIn: Boolean(user?.opt_in),
       entries: formattedEntries,
       booksFinished: completedList.length,
       completedBooksList: completedList
@@ -112,73 +112,77 @@ export async function loadUserData(telegramId, telegramName) {
 }
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
-  const { data: user } = await supabase
-    .from("users")
-    .select("id")
-    .eq("telegram_id", telegramId)
-    .single();
+  try {
+    const rawId = String(telegramId);
+    const numId = Number(telegramId) || 0;
+    const cleanTitle = (bookTitle || "").trim();
 
-  if (!user) {
-    debugAlert("لم يتم العثور على المستخدم");
-    return { success: false, message: "لم يتم العثور على المستخدم" };
-  }
+    // 1. جلب المستخدم بمرونة (يدعم String و Number)
+    const { data: user, error: userErr } = await supabase
+      .from("users")
+      .select("id")
+      .or(`telegram_id.eq.${numId},telegram_id.eq.${rawId}`)
+      .maybeSingle();
 
-  // جلب جميع قراءات هذا الكتاب للمستخدم
-  const { data: logs } = await supabase
-    .from("reading_logs")
-    .select("pages, total_pages, entry_date, author")
-    .eq("user_id", user.id)
-    .eq("book", bookTitle);
+    if (userErr || !user) {
+      return { success: false, message: "لم يتم العثور على المستخدم المسجل!" };
+    }
 
-  if (!logs || logs.length === 0) {
-    return { success: false, message: "لا تملك سجلات قراءة لهذا الكتاب!" };
-  }
+    // 2. جلب جميع قراءات هذا الكتاب للمستخدم
+    const { data: logs, error: logsErr } = await supabase
+      .from("reading_logs")
+      .select("*")
+      .eq("user_id", user.id);
 
-  // 1. حساب إجمالي الصفحات المسجلة للكتاب
-  const totalReadPages = logs.reduce((sum, log) => sum + (log.pages || 0), 0);
-  const targetTotalPages = logs[0]?.total_pages || 0;
-  const author = logs[0]?.author || "";
+    // فلترة السجلات الخاصة بهذا الكتاب تحديداً
+    const bookLogs = (logs || []).filter(
+      (l) => (l.book || l.book_title || "").trim().toLowerCase() === cleanTitle.toLowerCase()
+    );
 
-  // 2. التحقق من شرط الصفحات الكلية
-  if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
-    const remaining = targetTotalPages - totalReadPages;
-    return { 
-      success: false, 
-      message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
-    };
-  }
+    if (bookLogs.length === 0) {
+      return { success: false, message: "لا تملك سجلات قراءة مسجلة لهذا الكتاب!" };
+    }
 
-  // 3. التحقق من التثبيت بأن القراءة تمت على مدار أيام وليس جلسة واحدة (اختياري / مرن)
-  const uniqueDays = new Set(logs.map(l => l.entry_date)).size;
-  if (uniqueDays < 1) {
-    return { success: false, message: "يجب تسجيل القراءة على مدار أيام أولاً." };
-  }
+    // 3. حساب إجمالي الصفحات المسجلة
+    const totalReadPages = bookLogs.reduce((sum, log) => sum + Number(log.pages || log.page_count || 0), 0);
+    const targetTotalPages = Number(bookLogs[0]?.total_pages || bookLogs[0]?.totalPages || 0);
+    const author = bookLogs[0]?.author || "";
 
-  // تسجيل الإتمام في قاعدة البيانات
-  // تسجيل الإتمام في قاعدة البيانات
-  // تسجيل الإتمام في قاعدة البيانات
-  const { error } = await supabase
-    .from("book_completions")
-    .insert({ 
-      user_id: user.id, 
-      book_title: bookTitle,
-      author: author,
-      total_pages: targetTotalPages
-    });
-
-  if (error) {
-    // 💡 التعديل هنا: فحص كود الخطأ أو نص القيد الفريد وإرجاع رسالة عربية بدلاً من نص Supabase
-    if (error.code === '23505' || (error.message && error.message.includes('unique_user_book_completion'))) {
+    // 4. التحقق من شرط اكتمال الصفحات الكلية
+    if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
+      const remaining = targetTotalPages - totalReadPages;
       return { 
         success: false, 
-        message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
+        message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
       };
     }
 
-    return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب" };
-  }
+    // 5. تسجيل الإتمام في جدول book_completions
+    const { error: insertErr } = await supabase
+      .from("book_completions")
+      .insert([{ 
+        user_id: user.id, 
+        book_title: cleanTitle,
+        author: author,
+        total_pages: targetTotalPages
+      }]);
 
-  return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
+    if (insertErr) {
+      if (insertErr.code === '23505' || (insertErr.message && insertErr.message.includes('unique_user_book_completion'))) {
+        return { 
+          success: false, 
+          message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
+        };
+      }
+      console.error("خطأ إدراج الأرشيف:", insertErr);
+      return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب في قاعدة البيانات" };
+    }
+
+    return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
+  } catch (err) {
+    console.error("finishBook Exception:", err);
+    return { success: false, message: "تعذر الاتصال بقاعدة البيانات" };
+  }
 }
 
 // عتبات المستويات والـ XP
