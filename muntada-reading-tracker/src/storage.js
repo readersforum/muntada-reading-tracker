@@ -44,45 +44,68 @@ async function ensureUser(telegramId, name) {
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, telegramName) {
   try {
-    // 1. جلب بيانات المستخدم
-    let { data: user, error: userErr } = await supabase
+    const rawId = String(telegramId);
+    const numId = Number(telegramId) || 0;
+
+    // 1. جلب بيانات المستخدم بمرونة وبدون أخطاء single()
+    let { data: users, error: userErr } = await supabase
       .from("users")
       .select("*")
-      .eq("telegram_id", String(telegramId))
-      .single();
+      .or(`telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
 
-    if (userErr || !user) {
-      return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
+    let user = users && users.length > 0 ? users[0] : null;
+
+    // 2. إذا لم يكن المستخدم مسجلاً بعد، نقوم بإنشائه تلقائياً
+    if (!user && rawId !== "guest") {
+      const { data: newUser } = await supabase
+        .from("users")
+        .insert([{ 
+          telegram_id: isNaN(Number(rawId)) ? rawId : Number(rawId), 
+          name: telegramName || "قارئ",
+          opt_in: true 
+        }])
+        .select()
+        .maybeSingle();
+
+      if (newUser) user = newUser;
     }
 
-    // 2. جلب سجلات القراءة
-    const { data: entriesData } = await supabase
-      .from("reading_entries")
-      .select("*")
-      .eq("user_id", user.id);
+    const internalId = user?.id;
 
-    // 3. 💡 جلب قائمة الكتب المكتملة من الأرشيف
-    const { data: completionsData } = await supabase
-      .from("book_completions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    // 3. جلب سجلات القراءة بجميع الاحتمالات (user_id أو telegram_id)
+    let entriesQuery = supabase.from("reading_entries").select("*");
+    if (internalId) {
+      entriesQuery = entriesQuery.or(`user_id.eq.${internalId},user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+    } else {
+      entriesQuery = entriesQuery.or(`user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+    }
+
+    const { data: entriesData, error: entErr } = await entriesQuery;
+
+    // 4. جلب الأرشيف (الكتب المكتملة)
+    let compQuery = supabase.from("book_completions").select("*");
+    if (internalId) {
+      compQuery = compQuery.or(`user_id.eq.${internalId},user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+    } else {
+      compQuery = compQuery.or(`user_id.eq.${rawId},telegram_id.eq.${rawId},telegram_id.eq.${numId}`);
+    }
+
+    const { data: completionsData } = await compQuery.order("created_at", { ascending: false });
 
     const completedList = completionsData || [];
 
     return {
-      name: user.name || telegramName || "",
-      optIn: Boolean(user.opt_in),
+      name: user?.name || telegramName || "",
+      optIn: Boolean(user?.opt_in),
       entries: entriesData || [],
       booksFinished: completedList.length,
-      completedBooksList: completedList // 👈 التأكد من إرجاع القائمة هنا
+      completedBooksList: completedList
     };
   } catch (err) {
     console.error("خطأ loadUserData:", err);
     return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
 }
-
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
   const { data: user } = await supabase
