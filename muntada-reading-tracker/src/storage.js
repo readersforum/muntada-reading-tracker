@@ -43,83 +43,71 @@ async function ensureUser(telegramId, name) {
 
 // يجيب بيانات المستخدم كاملة + سجل القراءات والكتب المنتهية للأرشيف
 export async function loadUserData(telegramId, telegramName) {
-  console.log("🔍 بدأ جلب البيانات للمستخدم:", { telegramId, telegramName });
-
   try {
     const rawId = String(telegramId);
+    const numId = Number(telegramId) || 0;
 
-    // 1. جلب المستخدم من جدول users
-    let { data: users, error: userErr } = await supabase
+    // 1. جلب المستخدم من جدول users بواسطة telegram_id (كرقم وكنص)
+    let { data: user, error: userErr } = await supabase
       .from("users")
       .select("*")
-      .eq("telegram_id", rawId);
+      .or(`telegram_id.eq.${numId},telegram_id.eq.${rawId}`)
+      .maybeSingle();
 
-    if (userErr) {
-      console.error("❌ خطأ في جدول users:", userErr);
+    if (!user) {
+      return { 
+        name: telegramName || "", 
+        entries: [], 
+        optIn: false, 
+        booksFinished: 0, 
+        completedBooksList: [] 
+      };
     }
 
-    let user = users && users.length > 0 ? users[0] : null;
-    console.log("👤 بيانات المستخدم من القاعدة:", user);
+    const uuid = user.id; // الـ UUID الخاص بالمستخدم
 
-   // داخل loadUserData في storage.js
+    // 2. جلب سجلات القراءة من جدول reading_logs
+    const { data: logsData } = await supabase
+      .from("reading_logs")
+      .select("*")
+      .eq("user_id", uuid);
 
-// جلب سجلات القراءة ومطابقة الحقول تلقائياً
-const { data: entriesData, error: entErr } = await supabase
-  .from("reading_entries")
-  .select("*");
+    const formattedEntries = (logsData || []).map((e) => ({
+      id: e.id,
+      date: e.date || (e.created_at ? e.created_at.slice(0, 10) : ""),
+      book: e.book || e.book_title || "",
+      pages: Number(e.pages || e.page_count || 0),
+      minutes: Number(e.minutes || 0),
+      note: e.note || "",
+      isClubBook: Boolean(e.is_club_book ?? e.isClubBook),
+      totalPages: Number(e.total_pages || e.totalPages || 0)
+    }));
 
-const rawUserEntries = (entriesData || []).filter(
-  (e) => String(e.telegram_id) === rawId || (user && e.user_id === user.id)
-);
-
-// توحيد مسميات الحقول لـ App.jsx
-const formattedEntries = rawUserEntries.map((e) => ({
-  id: e.id,
-  date: e.date || (e.created_at ? e.created_at.slice(0, 10) : ""),
-  book: e.book || e.book_title || "",
-  pages: Number(e.pages || e.page_count || 0),
-  minutes: Number(e.minutes || 0),
-  note: e.note || "",
-  isClubBook: Boolean(e.is_club_book ?? e.isClubBook),
-  totalPages: Number(e.total_pages || e.totalPages || 0)
-}));
-
-return {
-  name: user?.name || telegramName || "",
-  optIn: user?.opt_in ?? true,
-  entries: formattedEntries, // 👈 استخدام المصفوفة المهيأة
-  booksFinished: userCompletions.length,
-  completedBooksList: userCompletions
-};
-
-    // 3. جلب الأرشيف (الكتب المكتملة)
-    const { data: completionsData, error: compErr } = await supabase
+    // 3. جلب الأرشيف من جدول book_completions
+    const { data: completionsData } = await supabase
       .from("book_completions")
-      .select("*");
+      .select("*")
+      .eq("user_id", uuid)
+      .order("created_at", { ascending: false });
 
-    if (compErr) {
-      console.error("❌ خطأ في جدول book_completions:", compErr);
-    }
-
-    const userCompletions = (completionsData || []).filter(
-      (c) => String(c.telegram_id) === rawId || (user && c.user_id === user.id)
-    );
-
-    console.log("✅ السجلات المفلترة للمستخدم:", {
-      entries: userEntries,
-      completions: userCompletions
-    });
+    const completedList = completionsData || [];
 
     return {
-      name: user?.name || telegramName || "",
-      optIn: user?.opt_in ?? true,
-      entries: userEntries,
-      booksFinished: userCompletions.length,
-      completedBooksList: userCompletions
+      name: user.name || telegramName || "",
+      optIn: Boolean(user.opt_in),
+      entries: formattedEntries,
+      booksFinished: completedList.length,
+      completedBooksList: completedList
     };
   } catch (err) {
-    console.error("🔥 خطأ عام في loadUserData:", err);
-    return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
+    console.error("خطأ loadUserData:", err);
+    return { 
+      name: telegramName || "", 
+      entries: [], 
+      optIn: false, 
+      booksFinished: 0, 
+      completedBooksList: [] 
+    };
   }
 }
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
