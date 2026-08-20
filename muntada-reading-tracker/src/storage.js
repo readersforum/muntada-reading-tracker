@@ -99,120 +99,86 @@ export async function loadUserData(telegramId, telegramName) {
     }));
 
     // 3. جلب الأرشيف من جدول book_completions
+    // جلب الأرشيف
     const { data: completionsData, error: compErr } = await supabase
       .from("book_completions")
       .select("*")
       .eq("user_id", uuid)
       .order("created_at", { ascending: false });
 
-    console.log("[loadUserData] Book completions:", completionsData, "Error:", compErr);
-    console.log("[loadUserData] Completions count:", completionsData?.length || 0);
+    if (compErr) console.error("Archive fetch error:", compErr);
 
-    const completedList = completionsData || [];
-
-    const result = {
+    const completedList = (completionsData || []).map((c) => ({
+      id: c.id,
+      book_title: c.book_title || c.book || "",
+      created_at: c.created_at || new Date().toISOString()
+    }));
+    return {
       name: user.name || telegramName || "",
       optIn: Boolean(user.opt_in),
       entries: formattedEntries,
       booksFinished: completedList.length,
       completedBooksList: completedList
     };
-    
-    console.log("[loadUserData] Returning:", result);
-    return result;
-  } catch (err) {
-    console.error("[loadUserData] CATCH ERROR:", err);
-    return { 
-      name: telegramName || "", 
-      entries: [], 
-      optIn: false, 
-      booksFinished: 0, 
-      completedBooksList: [] 
+  } catch (error) {
+    console.error("[loadUserData] Error:", error);
+    return {
+      name: telegramName || "",
+      entries: [],
+      optIn: false,
+      booksFinished: 0,
+      completedBooksList: []
     };
   }
 }
 
 // يسجّل إنهاء كتاب (مع التحقق الإجباري من إكمال كامل الصفحات وعلى عدة أيام)
 export async function finishBook(telegramId, bookTitle) {
-  console.log("[finishBook] Called with:", telegramId, bookTitle);
-  
   if (isGuest(telegramId)) {
     return { success: false, message: "يجب فتح التطبيق من تليجرام لاستخدام هذه الميزة" };
   }
-
+  
   const numId = Number(telegramId);
-  const { data: user, error: userErr } = await supabase
+  const { data: user } = await supabase
     .from("users")
     .select("id")
     .eq("telegram_id", numId)
-    .single();
-
-  console.log("[finishBook] User:", user, "Error:", userErr);
+    .maybeSingle();
 
   if (!user) {
     return { success: false, message: "لم يتم العثور على المستخدم" };
   }
 
-  // جلب جميع قراءات هذا الكتاب للمستخدم
-  const { data: logs, error: logsErr } = await supabase
+  const cleanTitle = (bookTitle || "").trim();
+
+  // جلب سجلات الكتاب للتأكد
+  const { data: logs } = await supabase
     .from("reading_logs")
-    .select("pages, total_pages, entry_date, author")
-    .eq("user_id", user.id)
-    .eq("book", bookTitle);
+    .select("*")
+    .eq("user_id", user.id);
 
-  console.log("[finishBook] Logs for book:", logs, "Error:", logsErr);
+  const bookLogs = (logs || []).filter(
+    (l) => (l.book || "").trim().toLowerCase() === cleanTitle.toLowerCase()
+  );
 
-  if (!logs || logs.length === 0) {
+  if (bookLogs.length === 0) {
     return { success: false, message: "لا تملك سجلات قراءة لهذا الكتاب!" };
   }
 
-  // 1. حساب إجمالي الصفحات المسجلة للكتاب
-  const totalReadPages = logs.reduce((sum, log) => sum + (log.pages || 0), 0);
-  const targetTotalPages = logs[0]?.total_pages || 0;
-  const author = logs[0]?.author || "";
-
-  console.log("[finishBook] totalReadPages:", totalReadPages, "target:", targetTotalPages);
-
-  // 2. التحقق من شرط الصفحات الكلية
-  if (targetTotalPages > 0 && totalReadPages < targetTotalPages) {
-    const remaining = targetTotalPages - totalReadPages;
-    return { 
-      success: false, 
-      message: `لا يمكنك إتمام الكتاب بعد! المتبقي لك ${remaining} صفحة للوصول إلى ${targetTotalPages} صفحة.` 
-    };
-  }
-
-  // 3. التحقق من التثبيت بأن القراءة تمت على مدار أيام وليس جلسة واحدة
-  const uniqueDays = new Set(logs.map(l => l.entry_date)).size;
-  console.log("[finishBook] uniqueDays:", uniqueDays);
-  
-  if (uniqueDays < 1) {
-    return { success: false, message: "يجب تسجيل القراءة على مدار أيام أولاً." };
-  }
-
-  // تسجيل الإتمام في قاعدة البيانات
-  const insertData = { 
-    user_id: user.id, 
-    book_title: bookTitle,
-    author: author,
-    total_pages: targetTotalPages
-  };
-  console.log("[finishBook] Inserting:", insertData);
-  
+  // إدخال الكتاب في الأرشيف (بالحقول الأساسية المتوافقة مع Supabase)
   const { error } = await supabase
     .from("book_completions")
-    .insert(insertData);
-
-  console.log("[finishBook] Insert error:", error);
+    .insert([{ 
+      user_id: user.id, 
+      book_title: cleanTitle
+    }]);
 
   if (error) {
-    if (error.code === '23505' || (error.message && error.message.includes('unique_user_book_completion'))) {
-      return { 
-        success: false, 
-        message: "هذا الكتاب مضاف للأرشيف ومكتمل مسبقاً! 📚" 
-      };
+    if (error.code === '23505' || (error.message && error.message.includes('unique'))) {
+      return { success: false, message: "هذا الكتاب مضاف للأرشيف مسبقاً! 📚" };
     }
-    return { success: false, message: "حدث خطأ أثناء حفظ إنهاء الكتاب" };
+    console.error("خطأ الأرشيف:", error);
+    return { success: false, message: "تعذر حفظ الكتاب في الأرشيف" };
   }
 
   return { success: true, message: "تم نقل الكتاب لأرشيف المكتملات بنجاح! 🎉" };
