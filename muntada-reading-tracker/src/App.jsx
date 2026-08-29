@@ -82,9 +82,19 @@ async function safeLoadUserData(userId, telegramName) {
     return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
   try {
-    return await loadUserData(userId, telegramName);
+    const data = await loadUserData(userId, telegramName);
+    
+    // 🔍 تنبيه الفحص المباشر:
+    alert("بيانات المستخدم:\n" +
+          "ID: " + userId + "\n" +
+          "عدد كتب الأرشيف: " + (data.completedBooksList?.length || 0) + "\n" +
+          "محتوى الأرشيف: " + JSON.stringify(data.completedBooksList)
+    );
+
+    return data;
   } catch (err) {
     console.error("loadUserData error:", err);
+    alert("حدث خطأ في loadUserData: " + err.message);
     return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
 }
