@@ -98,32 +98,30 @@ export async function loadUserData(telegramId, telegramName) {
       totalPages: Number(e.total_pages || e.totalPages || 0)
     }));
 
-    // داخل loadUserData في storage.js
+    // 3. جلب الأرشيف
+    const { data: completionsData, error: compErr } = await supabase
+      .from("book_completions")
+      .select("*");
 
-// جلب الأرشيف بكل الطرق الممكنة
-let completionsData = [];
-if (uuid) {
-  const { data: cData, error: cErr } = await supabase
-    .from("book_completions")
-    .select("*")
-    .or(`user_id.eq.${uuid},user_id.eq.${numId},user_id.eq.${rawId}`);
+    if (compErr) console.error("Archive Error:", compErr);
 
-  if (cErr) console.error("Archive query error:", cErr);
-  completionsData = cData || [];
-} else {
-  const { data: cData } = await supabase
-    .from("book_completions")
-    .select("*")
-    .or(`user_id.eq.${numId},user_id.eq.${rawId}`);
-  completionsData = cData || [];
-}
+    // تصفية الأرشيف الخاص بهذا المستخدم
+    const completedList = (completionsData || [])
+      .filter((c) => String(c.user_id) === String(uuid) || String(c.user_id) === String(numId) || String(c.user_id) === String(telegramId))
+      .map((c) => ({
+        id: c.id,
+        book_title: c.book_title || c.book || "",
+        author: c.author || "",
+        created_at: c.created_at
+      }));
 
-const completedList = (completionsData || []).map((c) => ({
-  id: c.id,
-  book_title: c.book_title || c.book || "",
-  author: c.author || "",
-  created_at: c.created_at
-}));
+    return {
+      name: user.name || telegramName || "",
+      optIn: Boolean(user.opt_in),
+      entries: formattedEntries,
+      booksFinished: completedList.length,
+      completedBooksList: completedList
+    };
   } catch (error) {
     console.error("[loadUserData] Error:", error);
     return {
