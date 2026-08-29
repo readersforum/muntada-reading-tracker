@@ -922,29 +922,37 @@ https://t.me/mtdreads_bot`;
               <>
                 {/* منصة التتويج للمراكز الثلاثة الأولى */}
 {leaderboard.length >= 3 && (
-  <div className="podium-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: '10px', marginBottom: '20px' }}>
-    
-    {/* 🥈 المركز الثاني (فضية) */}
-    <div className="podium-card rank-2" style={{ flex: 1, textAlign: 'center', background: '#fff9e6', borderRadius: '12px', padding: '10px', height: '140px', border: '1px solid #ffd54f' }}>
-      <div style={{ fontSize: '1.4rem' }}>🥈</div>
-      <h4 style={{ margin: '6px 0 2px', fontSize: '0.9rem' }}>{leaderboard[1]?.name}</h4>
-      <span style={{ fontSize: '0.8rem', color: '#666' }}>{leaderboard[1]?.current} يوم</span>
-    </div>
+  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 10, marginBottom: 20, padding: "0 10px" }}>
+    {[
+      { rank: 1, height: "135px", bg: "#F8FAFC", border: "#CBD5E1", medal: "🥈" }, // المركز الثاني (يمين)
+      { rank: 0, height: "170px", bg: "#FFFDF5", border: "#F59E0B", medal: "🥇" }, // المركز الأول (وسط - الأطول)
+      { rank: 2, height: "115px", bg: "#FFF7ED", border: "#FDBA74", medal: "🥉" }  // المركز الثالث (يسار - الأقصر)
+    ].map((col, idx) => {
+      const r = leaderboard[col.rank];
+      if (!r) return null;
 
-    {/* 🥇 المركز الأول (ذهبية - الأطول في المنتصف) */}
-    <div className="podium-card rank-1" style={{ flex: 1, textAlign: 'center', background: '#fff', borderRadius: '12px', padding: '10px', height: '170px', border: '2px solid #ffb300' }}>
-      <div style={{ fontSize: '1.6rem' }}>🥇</div>
-      <h4 style={{ margin: '6px 0 2px', fontSize: '0.95rem', fontWeight: 'bold' }}>{leaderboard[0]?.name}</h4>
-      <span style={{ fontSize: '0.85rem', color: '#e65100', fontWeight: 'bold' }}>{leaderboard[0]?.current} يوم</span>
-    </div>
-
-    {/* 🥉 المركز الثالث (برونزية) */}
-    <div className="podium-card rank-3" style={{ flex: 1, textAlign: 'center', background: '#fff5eb', borderRadius: '12px', padding: '10px', height: '120px', border: '1px solid #ffcc80' }}>
-      <div style={{ fontSize: '1.4rem' }}>🥉</div>
-      <h4 style={{ margin: '6px 0 2px', fontSize: '0.9rem' }}>{leaderboard[2]?.name}</h4>
-      <span style={{ fontSize: '0.8rem', color: '#666' }}>{leaderboard[2]?.current} يوم</span>
-    </div>
-
+      return (
+        <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ fontSize: 26, marginBottom: 4 }}>{col.medal}</div>
+          <div style={{
+            width: "100%",
+            height: col.height,
+            background: col.bg,
+            border: `2px solid ${col.border}`,
+            borderRadius: "14px 14px 8px 8px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "8px 4px",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.04)"
+          }}>
+            <div style={{ color: "#1E293B", fontWeight: 700, fontSize: 13, textAlign: "center", wordBreak: "break-word" }}>{r.name}</div>
+            <div style={{ color: col.rank === 0 ? "#D97706" : "#64748B", fontSize: 12, fontWeight: 700, marginTop: 4 }}>{r.current} يوم</div>
+          </div>
+        </div>
+      );
+    })}
   </div>
 )}
                 {leaderboard.map((r, i) => {
