@@ -81,16 +81,9 @@ async function safeLoadUserData(userId, telegramName) {
   if (userId === "guest") {
     return { name: telegramName || "", entries: [], optIn: false, booksFinished: 0, completedBooksList: [] };
   }
+
   try {
     const data = await loadUserData(userId, telegramName);
-    
-    // 🔍 تنبيه الفحص المباشر:
-    alert("بيانات المستخدم:\n" +
-          "ID: " + userId + "\n" +
-          "عدد كتب الأرشيف: " + (data.completedBooksList?.length || 0) + "\n" +
-          "محتوى الأرشيف: " + JSON.stringify(data.completedBooksList)
-    );
-
     return data;
   } catch (err) {
     console.error("loadUserData error:", err);
@@ -927,33 +920,33 @@ https://t.me/mtdreads_bot`;
               </div>
             ) : (
               <>
-                {/* Podium */}
-                {leaderboard.length >= 3 && (
-                  <div style={{ display: "flex", alignItems: "end", justifyContent: "center", gap: 10, marginBottom: 20, padding: "0 10px" }}>
-                    {[1, 0, 2].map((pos) => {
-                      const r = leaderboard[pos];
-                      if (!r) return null;
-                      const heights = ["90px", "130px", "70px"];
-                      const colors = ["#FEF3C7", "#FDF1E3", "#FFEDD5"];
-                      const borders = ["#FCD34D", "#F59E0B", "#FB923C"];
-                      const medals = ["🥈", "🥇", "🥉"];
-                      return (
-                        <div key={pos} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                          <div style={{ fontSize: 24, marginBottom: 4 }}>{medals[pos]}</div>
-                          <div style={{
-                            width: "100%", height: heights[pos], background: colors[pos],
-                            border: `2px solid ${borders[pos]}`, borderBottom: "none",
-                            borderRadius: "12px 12px 0 0", display: "flex", flexDirection: "column",
-                            alignItems: "center", justifyContent: "end", paddingBottom: 10,
-                          }}>
-                            <div style={{ color: navy, fontWeight: 700, fontSize: 12, textAlign: "center", padding: "0 4px" }}>{r.name}</div>
-                            <div style={{ color: slate, fontSize: 10, fontWeight: 600 }}>{r.current} يوم</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                {/* منصة التتويج للمراكز الثلاثة الأولى */}
+{leaderboard.length >= 3 && (
+  <div className="podium-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: '10px', marginBottom: '20px' }}>
+    
+    {/* 🥈 المركز الثاني (فضية) */}
+    <div className="podium-card rank-2" style={{ flex: 1, textAlign: 'center', background: '#fff9e6', borderRadius: '12px', padding: '10px', height: '140px', border: '1px solid #ffd54f' }}>
+      <div style={{ fontSize: '1.4rem' }}>🥈</div>
+      <h4 style={{ margin: '6px 0 2px', fontSize: '0.9rem' }}>{leaderboard[1]?.name}</h4>
+      <span style={{ fontSize: '0.8rem', color: '#666' }}>{leaderboard[1]?.current} يوم</span>
+    </div>
+
+    {/* 🥇 المركز الأول (ذهبية - الأطول في المنتصف) */}
+    <div className="podium-card rank-1" style={{ flex: 1, textAlign: 'center', background: '#fff', borderRadius: '12px', padding: '10px', height: '170px', border: '2px solid #ffb300' }}>
+      <div style={{ fontSize: '1.6rem' }}>🥇</div>
+      <h4 style={{ margin: '6px 0 2px', fontSize: '0.95rem', fontWeight: 'bold' }}>{leaderboard[0]?.name}</h4>
+      <span style={{ fontSize: '0.85rem', color: '#e65100', fontWeight: 'bold' }}>{leaderboard[0]?.current} يوم</span>
+    </div>
+
+    {/* 🥉 المركز الثالث (برونزية) */}
+    <div className="podium-card rank-3" style={{ flex: 1, textAlign: 'center', background: '#fff5eb', borderRadius: '12px', padding: '10px', height: '120px', border: '1px solid #ffcc80' }}>
+      <div style={{ fontSize: '1.4rem' }}>🥉</div>
+      <h4 style={{ margin: '6px 0 2px', fontSize: '0.9rem' }}>{leaderboard[2]?.name}</h4>
+      <span style={{ fontSize: '0.8rem', color: '#666' }}>{leaderboard[2]?.current} يوم</span>
+    </div>
+
+  </div>
+)}
                 {leaderboard.map((r, i) => {
                   const isTopThree = i < 3;
                   const isMe = r.id === userId;
