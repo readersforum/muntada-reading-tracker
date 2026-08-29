@@ -100,19 +100,22 @@ export async function loadUserData(telegramId, telegramName) {
 
     // 3. جلب الأرشيف من جدول book_completions
     // جلب الأرشيف
+    // 3. جلب الأرشيف
     const { data: completionsData, error: compErr } = await supabase
       .from("book_completions")
       .select("*")
       .eq("user_id", uuid)
       .order("created_at", { ascending: false });
 
-    if (compErr) console.error("Archive fetch error:", compErr);
+    if (compErr) console.error("خطأ جلب الأرشيف:", compErr);
 
     const completedList = (completionsData || []).map((c) => ({
       id: c.id,
       book_title: c.book_title || c.book || "",
-      created_at: c.created_at || new Date().toISOString()
+      author: c.author || "",
+      created_at: c.created_at
     }));
+
     return {
       name: user.name || telegramName || "",
       optIn: Boolean(user.opt_in),
